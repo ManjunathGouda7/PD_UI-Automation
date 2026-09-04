@@ -1,0 +1,21 @@
+{
+  "dut_profiles": {
+    "provider_epr": {
+      "dut_role": "Provider Only",
+      "max_power_w": 240,
+      "cable_model": "GRL-SPL EPR Cable 1",
+      "expected_test_count": 207
+    },
+    "consumer_epr": {
+      "dut_role": "Consumer Only",
+      "max_power_w": 100,
+      "cable_model": "GRL-SPL EPR Cable 1",
+      "expected_test_count": 140
+    }
+  },
+  "connection_defaults": {
+    "ip": "192.168.102.76",
+    "port": "5003",
+    "device_serial": "GRL-V-DPWR-EPR-0002"
+  }
+}

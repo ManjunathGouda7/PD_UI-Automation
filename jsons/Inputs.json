@@ -1,0 +1,16 @@
+{
+  "GRL-V-DPWR-EPR": {
+    "PD": {
+      "BaseURL": "http://localhost:5003",
+      "DefaultIP": "192.168.255.1",
+      "Port": "5003",
+      "DUTType": "",
+      "CableModel": "",
+      "apis": {
+        "url_version": "http://localhost:5003/api/App/GetURLVersionExtension",
+        "device_status": "http://localhost:5003/api/device/status",
+        "sw_version": "http://localhost:5003/api/system/version"
+      }
+    }
+  }
+}

@@ -1,0 +1,37 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Testing & Artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+allure-results/
+allure-report/
+.playwright-artifacts/
+.playwright-traces/
+
+# Linting & Tool Caches
+.ruff_cache/
+.mypy_cache/
+
+# Environment Variables & Secrets
+Configurations/.env
+.env
+.env.*
+!.env.example
+
+# Logs and Runtime Reports (track directories via .gitkeep)
+logs/*
+!logs/.gitkeep
+Reports/*
+!Reports/.gitkeep
+
+# IDE / OS Files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
