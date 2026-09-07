@@ -130,3 +130,42 @@ class Config:
         val = cls.get("HEADLESS", False)
         return bool(val)
 
+    @classmethod
+    def api_host(cls) -> str:
+        """Returns the base API host, e.g. http://localhost:5003"""
+        raw_url = str(cls.get("BASE_URL", "http://localhost:5003")).rstrip("/")
+        if raw_url.endswith(".html"):
+            raw_url = "/".join(raw_url.split("/")[:-1])
+        return raw_url
+
+    @classmethod
+    def get_api_endpoint(cls, key: str, default: str = "") -> str:
+        """
+        Returns full URL for configured API key or builds from api_host.
+        Supports:
+          - Direct alias: get_api_endpoint("sw_version")
+          - Controller dot notation: get_api_endpoint("App.GetSoftwareVersion")
+          - Controller slash notation: get_api_endpoint("App/GetSoftwareVersion")
+          - Endpoint search across all controllers: get_api_endpoint("GetSoftwareVersion")
+        """
+        inputs = cls.get_inputs()
+        apis = inputs.get("GRL-V-DPWR-EPR", {}).get("PD", {}).get("apis", {})
+        if key in apis and isinstance(apis[key], str):
+            return str(apis[key])
+
+        normalized_key = key.replace("/", ".")
+        if "." in normalized_key:
+            controller, subkey = normalized_key.split(".", 1)
+            if controller in apis and isinstance(apis[controller], dict):
+                if subkey in apis[controller]:
+                    return str(apis[controller][subkey])
+
+        for val in apis.values():
+            if isinstance(val, dict) and key in val:
+                return str(val[key])
+
+        if not default and key:
+            return f"{cls.api_host()}/api/{key.lstrip('/')}"
+        return default
+
+

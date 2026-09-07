@@ -7,9 +7,16 @@ import pytest
 from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page
 from Scripts.Helpers.config import Config
 from Scripts.Helpers.logger import logger
+from Scripts.Helpers.api_client import C2ApiClient, c2_api
 
 REPORTS_DIR = Path(__file__).resolve().parent.parent / "Reports"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+@pytest.fixture(scope="session")
+def api_client() -> C2ApiClient:
+    """Fixture providing C2ApiClient instance for REST API interactions."""
+    return c2_api
+
 
 @pytest.fixture(scope="session")
 def browser_instance():
