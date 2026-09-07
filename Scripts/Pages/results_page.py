@@ -1,6 +1,7 @@
 """
 Page Object Model for Results Panel.
 """
+from typing import Any
 from playwright.sync_api import Page
 from Scripts.Pages.base_page import BasePage
 from Scripts.Helpers.Locators import NavigationLocators, ResultsLocators
@@ -44,3 +45,32 @@ class ResultsPage(BasePage):
         passed = self.get_text(ResultsLocators.PASSED_COUNTER) if self.is_visible(ResultsLocators.PASSED_COUNTER, 2000) else "0"
         failed = self.get_text(ResultsLocators.FAILED_COUNTER) if self.is_visible(ResultsLocators.FAILED_COUNTER, 2000) else "0"
         return {"passed": passed, "failed": failed}
+
+    def cross_validate_with_api(self, api_client) -> dict[str, Any]:
+        """
+        Cross-validates UI result indicators against backend REST API summary.
+        Returns a dict with UI counts, API counts, and validation match status.
+        """
+        import re
+        ui_summary = self.get_results_summary()
+        api_results = api_client.get_test_results()
+        api_summary = api_results.get("summary", {})
+
+        ui_pass_match = re.search(r"\d+", ui_summary.get("passed", "0"))
+        ui_pass_count = int(ui_pass_match.group(0)) if ui_pass_match else 0
+
+        ui_fail_match = re.search(r"\d+", ui_summary.get("failed", "0"))
+        ui_fail_count = int(ui_fail_match.group(0)) if ui_fail_match else 0
+
+        api_pass_count = int(api_summary.get("passCount", 0))
+        api_fail_count = int(api_summary.get("failCount", 0))
+
+        return {
+            "ui_passed": ui_pass_count,
+            "ui_failed": ui_fail_count,
+            "api_passed": api_pass_count,
+            "api_failed": api_fail_count,
+            "passed_match": ui_pass_count == api_pass_count,
+            "failed_match": ui_fail_count == api_fail_count,
+        }
+

@@ -32,3 +32,13 @@ class TestResultsPanel:
         summary = results_page.get_results_summary()
         assert "passed" in summary
         assert "failed" in summary
+
+    @pytest.mark.smoke
+    def test_TC_05_hybrid_ui_api_cross_validation(self, page: Page, api_client):
+        results_page = ResultsPage(page)
+        results_page.open_panel()
+        val = results_page.cross_validate_with_api(api_client)
+        assert isinstance(val, dict)
+        assert "ui_passed" in val
+        assert "api_passed" in val
+

@@ -17,7 +17,7 @@ Enterprise-grade Page Object Model (POM) test automation framework for the **GRL
   8. `Help`: Diagnostics & debug log generation.
 - **Modern PyQt6 Desktop Runner**: Obsidian & Electric Amber theme with presets, worker controls, retry selector, and live search.
 - **Reporting Engine**: Standalone Interactive HTML Dashboard with dark/light mode toggle + multi-sheet Excel reports.
-- **CI/CD Ready**: Dockerfile, Docker Compose, GitHub Actions, and Jenkinsfile pipelines.
+- **CI/CD Ready**: Dockerfile, Docker Compose, and Jenkinsfile pipelines.
 
 ---
 

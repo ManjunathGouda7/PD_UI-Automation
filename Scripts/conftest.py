@@ -1,21 +1,62 @@
 """
 Pytest configuration and Playwright fixtures for GRL USB PD C2 UI Automation.
 """
-import time
+import os
 from pathlib import Path
+import time
+from playwright.sync_api import Browser, BrowserContext, Page, sync_playwright
 import pytest
-from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page
+from Scripts.Helpers.api_client import C2ApiClient, c2_api
 from Scripts.Helpers.config import Config
 from Scripts.Helpers.logger import logger
-from Scripts.Helpers.api_client import C2ApiClient, c2_api
+from Scripts.Helpers.mock_server import start_mock_service, stop_mock_service
 
 REPORTS_DIR = Path(__file__).resolve().parent.parent / "Reports"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def ensure_c2_backend():
+    """
+    Ensures a reachable C2 backend service before any test runs.
+    Automatically launches the internal mock server if the live hardware server
+    is offline or if MOCK_SERVER=true is set in the environment.
+    """
+    mock_started = False
+    force_mock = os.getenv("MOCK_SERVER", "").lower() in ("true", "1", "yes")
+
+    if force_mock or not c2_api.is_online():
+        logger.info("C2 live backend is offline or MOCK_SERVER requested. Starting Mock C2 Server...")
+        mock_started = start_mock_service(port=5003)
+        if mock_started:
+            logger.info("Mock C2 Server successfully initialized on port 5003.")
+        else:
+            logger.warning("Could not bind Mock C2 Server on 5003 (port may already have an active listener).")
+
+    yield
+
+    if mock_started:
+        logger.info("Shutting down Mock C2 Server...")
+        stop_mock_service()
+
 
 @pytest.fixture(scope="session")
 def api_client() -> C2ApiClient:
     """Fixture providing C2ApiClient instance for REST API interactions."""
     return c2_api
+
+
+@pytest.fixture(scope="function")
+def hybrid_clean_state(api_client: C2ApiClient):
+    """
+    Fixture ensuring hardware test results are cleared via API before a test.
+    """
+    try:
+        if api_client.is_online():
+            api_client.clear_test_results()
+    except Exception as e:
+        logger.warning(f"Hybrid clean state warning: {e}")
+    yield api_client
 
 
 @pytest.fixture(scope="session")
@@ -28,6 +69,7 @@ def browser_instance():
         )
         yield browser
         browser.close()
+
 
 @pytest.fixture(scope="function")
 def page(browser_instance: Browser, request) -> Page:
@@ -73,6 +115,7 @@ def page(browser_instance: Browser, request) -> Page:
             pass
 
     context.close()
+
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_makereport(item, call):

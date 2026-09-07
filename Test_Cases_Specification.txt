@@ -1,0 +1,189 @@
+Test Engineer				
+SW Version				
+FW Version				
+VIF				
+Eload / PPS				
+Tester Serial No				
+Execution Mode (Compliance / Informational)				
+Browser Engine (Chrome / Edge)				
+				
+Section	Sl. No.	Test / Check	Result	Remarks / Defect ID
+General & Environment	1	Verify the browser cache is cleared before starting the software using the browser inspect option.		
+	2	Verify the software installation. It should install without any issue and all the required framework files should be present.		
+	3	Verify the Read me and Release notes are present in the software installation folder.		
+	4	Verify all the required folders are created in the installation path (E-Load firmware, firmware, report and log folders).		
+	5	Verify the tester connectivity using the documented Ethernet default IP address.		
+	6	Verify the Ethernet dynamic IP configuration and the tester discovery.		
+	7	Verify the firmware version displayed in the software is identical to the version shown on the hardware display.		
+	8	Verify the hardware serial number displayed in the software is identical to the number shown on the hardware display.		
+	9	Verify the software version remains displayed while navigating across all the panels.		
+	10	Verify the Configure panel opens properly without any UI freeze.		
+	11	Verify the firmware update manually and through automation, by upgrading and downgrading the PPS, E-Load and baseboard firmware.		
+	12	Verify the tester restarts automatically after the firmware update.		
+	13	Verify the firmware update using the different host PCs and laptops available, and record the list of PCs used.		
+	14	Verify the PPS and E-Load update procedure and their operational status after the update.		
+	15	Verify the User guide is present and updated in the software installation folder.		
+	16	Verify the 'V-DPWR-EPR Path Update' initial modal dialog appears on load, and can be dismissed via the OK button (.popupButton_Ok) or disabled via API.		
+	17	Verify the tester display shows 'Old FW File' when an incompatible or outdated firmware binary is flashed.		
+Connection Setup	1	Verify the software title bar displays the software name, the software version and the connected model (GRL-V-DPWR-EPR).		
+	2	Verify the left navigation lists all the panels - Connection Setup, Product Capability, Test Config, Results, Report, Configure, LoopBack and Help.		
+	3	Verify the menu control on the top left expands and collapses the navigation pane.		
+	4	Verify the Scan Network control. All the testers available in the network should be discovered and listed in the Primary IP Address dropdown.		
+	5	Verify the Primary IP Address field. A discovered address should be selectable and an address should also be enterable manually.		
+	6	Verify the Primary IP Address validation. An invalid or malformed IP address should be rejected with an appropriate message.		
+	7	Verify the Connect API. The tester should connect and the Tester Status should change from Disconnected to connected.		
+	8	Verify the Serial Number and Firmware Version fields are populated after connection and match the connected hardware.		
+	9	Verify the Tester IP Address Information field displays the connected tester IP details.		
+	10	Verify the Last Calibration Date and Calibration Due fields display the correct calibration details of the connected tester.		
+	11	Verify the VDPWR Tester Calibration status. It should report Calibration Error when the calibration data is invalid or missing, and the valid status when the tester is calibrated.		
+	12	Verify the License Information table lists the License Name, License Type and License Period of all the enabled licenses.		
+	13	Verify the License Information table behaviour when no license is available on the connected tester.		
+	14	Verify the Update System firmware control under Tool Updates. It should be enabled only after the tester is connected, and the firmware should be updated successfully.		
+	15	Verify the connection attempt with an unreachable or powered-off tester. An appropriate error should be displayed without any crash.		
+	16	Verify the connection attempt to a tester that is already connected to another host PC.		
+	17	Verify the tester details and license information are cleared or retained as per the design after disconnecting the tester.		
+	18	Verify the hardware setup diagram is displayed correctly when the tester is in Disconnected state.		
+	19	Verify the hardware setup diagram updates to the active Connected state diagram when the tester connects successfully.		
+	20	Verify the DP AUX Sniffer controls in the Connection Setup panel are enabled and operational when the DP AUX license is active.		
+VIF & DUT Roles	1	In Compliance mode, verify only the VIF loading and the cable selection are enabled and no other manual override option is visible.		
+	2	Provider DUT (captive and receptacle) - verify the Get Caps without VIF.		
+	3	DRP DUT (captive and receptacle) - verify the Get Caps without VIF.		
+	4	Consumer only DUT (captive and receptacle) - verify the Get Caps without VIF.		
+	5	Cable DUT - verify the Get Caps without VIF.		
+	6	Provider DUT (captive and receptacle) - load VIF and verify the Get Caps.		
+	7	DRP DUT (captive and receptacle) - load VIF and verify the Get Caps.		
+	8	Consumer only DUT (captive and receptacle) - load VIF and verify the Get Caps.		
+	9	Cable DUT - load VIF and verify the Get Caps.		
+	10	Provider DUT - Get Caps, Generate VIF and verify the VIF downloads in .XML format.		
+	11	DRP DUT - Get Caps, Generate VIF and verify the VIF downloads in .XML format.		
+	12	Consumer only DUT - Get Caps, Generate VIF and verify the VIF downloads in .XML format.		
+	13	Cable DUT - Get Caps, Generate VIF and verify the VIF downloads in .XML format.		
+	14	Verify the Reset and Clear VIF data functionality.		
+	15	In the informational VIF tab, verify no VIF data is displayed after Clear VIF Data is applied.		
+	16	Verify the generated VIF loads in the USB-IF VIF Generator tool without any syntax error.		
+	17	Verify the Copy Device data to VIF data control copies all the captured device parameters correctly.		
+	18	Verify the Project Name input field (#pcNewProjectNameInputField) and Save button (#pcNewProjectNameSaveBtn) save the current project configuration.		
+	19	Verify the Port 2 DUT Type and Cable Selection ComboBox controls for dual-port test setups.		
+	20	Verify the 'USB-IF VIF Generator Download Link' (a.xml-tool) directs to the official USB-IF tool download.		
+	21	In Informational mode, verify individual VIF parameters can be manually edited, added, or removed in the VIF Editor table.		
+	22	Verify test cases execute successfully using the newly generated and exported VIF XML file.		
+Product Capability & Browser	1	Informational mode with VIF loaded (DRP, Provider, Consumer, Cable and Type-C only) - select all the certification categories and verify the MOI list, the test selection and the MOI configuration visibility.		
+	2	Informational mode without VIF (DRP, Provider, Consumer, Cable and Type-C only) - select all the certification categories and verify the MOI list, the test selection and the MOI configuration visibility.		
+	3	Chrome informational mode - enable and disable the timeout pop-up, minimize the browser application and verify the behaviour.		
+	4	Chrome compliance mode - verify the timeout pop-up, Rerun selected test case and Enable debug mode are not accessible.		
+	5	MS Edge informational mode - enable and disable the timeout pop-up, minimize the browser application and verify the behaviour.		
+	6	MS Edge compliance mode - verify the timeout pop-up, Rerun selected test case and Enable debug mode are not accessible.		
+	7	Verify UI responsiveness, element layout, and table alignment across 1920x1080 and scaled display resolutions in Chrome and Edge.		
+Get Caps & Trace	1	Verify the values updated in the Get Caps field match the loaded VIF with a Provider DUT, and verify the Get Caps trace file is generated in the report temp folder.		
+	2	Verify the values updated in the Get Caps field match the loaded VIF with a DRP DUT, and verify the Get Caps trace file is generated in the report temp folder.		
+	3	Verify the values updated in the Get Caps field match the loaded VIF with a Consumer DUT, and verify the Get Caps trace file is generated in the report temp folder.		
+	4	Verify the values updated in the Get Caps field match the loaded VIF with a Cable DUT, and verify the Get Caps trace file is generated in the report temp folder.		
+Test Config & MOI	1	Verify all the certification suites are listed in the Test Config tree - PDM, USB-C Functional, IEC and Functional.		
+	2	Verify the required MOI is listed automatically upon certification selection.		
+	3	Verify the test search works as expected using a test ID and using a test name.		
+	4	Verify the text entered in the Report Generation configuration is printed in the final report.		
+	5	Verify the text entered in the Test Information configuration is printed in the final report.		
+	6	Verify the 'Save Test Sequence' and 'Load Test Sequence' controls save and restore custom test selections.		
+	7	Verify the Pass, Fail, Incomplete, Warning, and Clear Filter buttons (#tcFilterSelectionPassBtn, etc.) filter the test tree correctly.		
+	8	Verify the 'Expand Test List' checkbox (#tcExpandTestListCheckBox) expands and collapses all test tree nodes.		
+	9	Verify test selection and deselection using checkboxes, 'Select All / Deselect All' buttons, and keyboard navigation (Spacebar / Enter).		
+	10	Verify the 'Selected Tests: X/Y' counter updates dynamically whenever tests are selected or deselected.		
+	11	Verify the 'Rerun Selected Test Cases' checkbox and loop count input field execute selected tests repeatedly.		
+	12	Verify Quick Charge 4 (QC4) MOI configuration parameters (DUT Type, Room Temperature, Cable Resistance) can be modified and saved.		
+	13	Verify Quick Charge 3.0 / 2.0 MOI configuration parameters (DUT Type, 5V Max Current, Continuous Mode) can be modified and saved.		
+	14	Verify Source Power Test (SPT) MOI configuration (Port Type, Power Input Reset checkbox) can be modified and saved.		
+	15	Verify Thunderbolt (TBT) MOI configuration (Number of Ports, Stress Test Timer) can be modified and saved.		
+	16	Verify USB-C Functional MOI configuration (Enable USB Data Validation checkbox, Setup Image link) behaves as expected.		
+	17	Verify PD2 Deterministic (VCONN Voltage selection) and PD2 Communication Engine (Noise Type selection) parameters can be configured.		
+	18	Verify Custom OEM MFi (Captive Lightning Plug, Scan E-load) and BC 1.2 (Secondary Detection, Maximum Current) parameters.		
+	19	Verify TC10 Battery configuration charging type radio options and dynamic input fields.		
+	20	Verify test execution start and stop using the UI button (#tcStartAndStopExecutionBtn), Enter key, and Spacebar key.		
+	21	Verify the Pause Execution and Resume Execution controls during an active test run.		
+Test Results & Protocol	1	Verify the protocol trace and the signal mapping are proper when a test item is selected.		
+	2	Verify the packet time stamps and the captured waveforms are aligned.		
+	3	Verify the Pass, Warning and Fail index counts are displayed correctly after the test execution.		
+	4	Provider DUT - verify all the test cases execute as per the selected MOI.		
+	5	Cable DUT - verify all the test cases execute as per the selected MOI.		
+	6	Consumer DUT - verify all the test cases execute as per the selected MOI.		
+	7	DRP DUT - verify all the test cases execute as per the selected MOI.		
+	8	Verify the Live Mode control functionality during the test execution.		
+	9	Verify the Protocol CC packet table virtual grid displays TimeStamp, Description, and packet details with smooth scrolling.		
+	10	Verify the Horizontal Zoom In/Out and Vertical Zoom In/Out controls on the waveform chart toolbar.		
+	11	Verify the 'Fit' button (#chart_toolbar_fit_button) and Pan controls (#chart_toolbar_click_pan_button) adjust the waveform display.		
+	12	Verify waveform measurement markers (#chart_toolbar_set_marker_button) calculate delta time and voltage accurately.		
+	13	Verify the Signal Mask analysis button and Screenshot button (#btn_screenshot) capture the active waveform.		
+	14	Verify the Channels dropdown (.channels-dropdown-toggle) toggles signal traces (VBUS, CC1, CC2) on the plot.		
+	15	Verify dragging and dropping a .grltrace file into the trace upload area (.drag-drop-custom) successfully loads offline waveforms.		
+	16	Verify Pass, Fail, and Warning index counts on the UI match the test result counts returned by the REST API (GET /api/Results/GetTestResults).		
+Configure & E-Load	1	Verify Controller Mode selection (UFP/Sink, Provider, Consumer) in the Configure panel (#opConfigControllerConfigureControllerModeComboBox).		
+	2	Verify Test Cable Type, PD Spec Type (Spec Rev2 / Rev3), Cable Emulation (Ra in CC1/CC2), and Rp Level (Default, 1.5A, 3.0A, 900mA) dropdowns.		
+	3	Verify hardware channel checkboxes (VBUS, VBUS SENSE, CC1, CC2) can be toggled and applied via the Apply button (#opConfigControllerConfigureApplyBtn).		
+	4	Verify the Sampling Ratio input field accepts valid sampling rates (default: 100).		
+	5	Verify the Electronic Attach (#opConfigControllerConfigureAttachBtn) and Detach (#opConfigControllerConfigureDetachBtn) controls engage and disengage hardware relays.		
+	6	Verify Waveform Capture controls: Start Capture (#opConfigControllerConfigureStartBtn), Stop Capture, and Download Capture (.grltrace file).		
+	7	Verify VBUS E-Load configuration in Constant Current (CC) mode, set Amps value, and test Enable / Disable controls.		
+	8	Verify VCONN E-Load configuration in Constant Current (CC) mode, set Amps value, and test Enable / Disable controls.		
+	9	Verify Auto E-Load configuration in PD Mode with percentage load input and test Enable / Disable controls.		
+	10	Verify the Send and Configure Message tabs allow constructing, byte-editing, and transmitting custom PD packets over CC lines.		
+	11	Verify custom PD packets can be saved to and loaded from JSON files in the Configure panel.		
+EPR Emulation (REST API)	1	Verify the emulation of two VDPWR EPR units through the REST API.		
+	2	Verify the 28V, 36V and 48V EPR transitions through the REST API and confirm VBUS settles at each configured step.		
+	3	Verify the EPR transitions are captured in the protocol trace and are reflected in the generated report.		
+Report Generation	1	Verify View Report opens correctly with all the values and diagrams populated.		
+	2	Verify the report download works properly in HTML and CSV formats.		
+	3	Verify the controller and instrument hardware information is present in the report header.		
+	4	Verify the VIF parameters and the user inputs match accurately in the report (HTML and CSV).		
+	5	Verify the Product Capabilities section is present in the report.		
+	6	Verify the Product Capabilities section contains the Get_Cap data when Get_Cap is executed.		
+	7	Verify the Power Capabilities section is present in the report.		
+	8	Verify the Power Capabilities section contains the Get_Cap data when Get_Cap is executed.		
+	9	Verify the Test Summary table is present with the pass and fail counts.		
+	10	Verify the Detailed Test Results section is present with the individual assertion steps.		
+	11	Verify the report links to the protocol packets are correctly linked and open the exact packets in the HTML file.		
+	12	Verify the report data management - folder structure, retention and cleanup - works correctly.		
+	13	Verify 'Download Current DUT Report Data' downloads the test and device data in CSV/JSON format.		
+	14	Verify report generation support across HTML, CSV, and PDF formats.		
+	15	Verify generated reports are stored in the configured directory (C:\GRL\GRL-V-DPWR-EPR\Report\TempReport).		
+LoopBack	1	Verify the loop back device detection and selection in the LoopBack panel.		
+	2	Verify the loop back test execution and the reported throughput and speed details.		
+	3	Verify the loop back test result is included in the generated report.		
+	4	Verify the Refresh button (.refresh-button) rescans and updates the connected loopback hardware list.		
+	5	Verify throughput test execution using 'Default Data' mode and 'Configured Data' mode.		
+Help & Diagnostics	1	Verify the Support Desk link redirects to the correct portal URL.		
+	2	Verify the Mail Support link opens the mail client with the correct support address.		
+	3	Verify Download Debug Logs triggers and produces a valid log archive.		
+	4	Verify the 'API Document' link (#hpApiDocumentLinkLabel) navigates to the local Swagger/API documentation.		
+	5	Verify the About / Software Information modal displays correct build, copyright, and patent details.		
+Admin & Debug Mode	1	Verify the Admin MOI dropdown (#adminMOIDropDown) allows selecting internal MOI sets (e.g., PD_Merged).		
+	2	Verify the VIF Format Toggle switch (#ModeToggleSwitch) switches between New and Old VIF schema parsing.		
+	3	Verify 'Disable all Pop-Ups' toggle (#disablePopups) suppresses execution alerts and warning dialogs.		
+	4	Verify FRAM calibration memory read, write (#fram-write), and decode operations.		
+	5	Verify internal hardware self-tests (LSADC Testing, IEC Self Test #test-button, and TBT Find FRAM).		
+5-Port Testing	1	Verify 5-Port testing enablement in system configuration.		
+	2	Verify all 5 ports can be independently configured with distinct DUT types and VIF files.		
+	3	Verify compliance test suite execution across all 5 ports using a Multi-Port Hub.		
+	4	Verify compliance test suite execution across all 5 ports using Multi-Port Cable harness.		
+	5	Verify 5-Port testing execution in Repeat Mode, Custom Mode, and All Mode.		
+	6	Verify COM port assignment and communication with external multiplexer hardware.		
+	7	Negative Test: Disconnect USB multi-port hub during an active 5-port run; verify graceful error handling.		
+VIF Mode & General	1	Verify the MOIs are listed dynamically based on the VIF or the DUT information.		
+	2	Verify the MOI list updates dynamically when a different VIF is loaded.		
+	3	Verify the MOIs executed match the MOIs listed in the generated final report.		
+	4	Verify the results folder naming convention and the saved report file types are correct.		
+License & MOI Filtering	1	Verify the License Information table lists the license name, type and period for every enabled license.		
+	2	Enable only the 240W PD3 license and verify the PDM test cases are listed with the EPR test cases included.		
+	3	Enable only the 100W PD3 license and verify the PDM test cases are listed without the EPR test cases.		
+	4	Enable only the USB-C Functional license and verify only the USB-C Functional test suite is listed.		
+	5	Enable only the IEC license and verify only the IEC test suite is listed.		
+	6	Enable only the Functional license and verify only the Functional test suite is listed.		
+	7	Enable a combination of licenses and verify only the test suites corresponding to the enabled licenses are listed under PDM and Functional MOI.		
+	8	Verify the behaviour when an expired license is present on the tester.		
+	9	Verify the behaviour when no license is enabled on the tester.		
+	10	Enable DP_AUX_Sniffer license and verify DP AUX Sniffer controls become active in the Connection Setup panel.		
+	11	Enable Quick Charge 3 Plus (QC3_Plus_Test) license and verify only QC3+ tests are listed.		
+	12	Enable Quick Charge 3 Legacy (QC_Legacy) license and verify only Quick Charger 3.0 tests are listed.		
+	13	Enable Quick Charge 4 IOP (QC4_IOP) license and verify only QC4 IOP tests are listed.		
+	14	Enable Quick Charge 4 TID (QC_Test) license and verify only QC4 TID tests are listed.		
+	15	Enable BC 1.2 DCP Sink QC Tests (BC_12_PD) license and verify only BC1.2 DCP Sink tests are listed.		
+	16	Enable Custom OEM Tests license and verify only Custom OEM test suites are listed.		
+	17	Enable IEC-62680-Conformity license with C2_Starter and EPR and verify only IEC conformity tests are listed under PDM and Functional.		

@@ -1,20 +1,73 @@
 {
   "dut_profiles": {
-    "provider_epr": {
+    "provider_epr_240w": {
       "dut_role": "Provider Only",
+      "power_class": "EPR",
+      "max_voltage_v": 48.0,
+      "max_current_a": 5.0,
       "max_power_w": 240,
       "cable_model": "GRL-SPL EPR Cable 1",
-      "expected_test_count": 207
+      "expected_test_count": 207,
+      "compliance_suite": "Power Delivery 3.2 Tests"
     },
-    "consumer_epr": {
+    "provider_spr_100w": {
+      "dut_role": "Provider Only",
+      "power_class": "SPR",
+      "max_voltage_v": 20.0,
+      "max_current_a": 5.0,
+      "max_power_w": 100,
+      "cable_model": "GRL-Standard SPR Cable",
+      "expected_test_count": 165,
+      "compliance_suite": "Power Delivery 3.2 Tests"
+    },
+    "consumer_sink_100w": {
       "dut_role": "Consumer Only",
+      "power_class": "SPR",
+      "max_voltage_v": 20.0,
+      "max_current_a": 5.0,
       "max_power_w": 100,
       "cable_model": "GRL-SPL EPR Cable 1",
-      "expected_test_count": 140
+      "expected_test_count": 140,
+      "compliance_suite": "Sink Mode Compliance"
+    },
+    "drp_dual_role": {
+      "dut_role": "Dual-Role Power",
+      "power_class": "EPR",
+      "max_voltage_v": 48.0,
+      "max_current_a": 5.0,
+      "max_power_w": 240,
+      "supports_frs": true,
+      "cable_model": "GRL-SPL EPR Cable 1",
+      "expected_test_count": 245,
+      "compliance_suite": "Power Delivery 3.2 Tests"
+    }
+  },
+  "cable_profiles": {
+    "epr_5a_active": {
+      "name": "GRL-SPL EPR Cable 1",
+      "current_rating_a": 5.0,
+      "voltage_rating_v": 50.0,
+      "type": "Active",
+      "emarker": true
+    },
+    "epr_5a_passive": {
+      "name": "GRL-Passive 240W Cable",
+      "current_rating_a": 5.0,
+      "voltage_rating_v": 50.0,
+      "type": "Passive",
+      "emarker": true
+    },
+    "spr_3a_passive": {
+      "name": "Standard 60W Cable",
+      "current_rating_a": 3.0,
+      "voltage_rating_v": 20.0,
+      "type": "Passive",
+      "emarker": false
     }
   },
   "connection_defaults": {
     "ip": "192.168.102.76",
+    "fallback_ip": "192.168.255.1",
     "port": "5003",
     "device_serial": "GRL-V-DPWR-EPR-0002"
   }

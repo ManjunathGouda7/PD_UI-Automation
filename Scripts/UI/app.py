@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QLineEdit, QComboBox, QCheckBox, QProgressBar,
     QTextEdit, QTreeWidget, QTreeWidgetItem, QFrame
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 
 DARK_STYLESHEET = """
 QMainWindow {
@@ -92,6 +92,7 @@ class MainWindow(QMainWindow):
         self.resize(1100, 750)
         self.setStyleSheet(DARK_STYLESHEET)
         self.init_ui()
+        QTimer.singleShot(200, self.update_backend_status)
 
     def init_ui(self):
         central = QWidget()
@@ -109,12 +110,18 @@ class MainWindow(QMainWindow):
         top_layout.addWidget(title_lbl)
         top_layout.addStretch()
 
+        self.backend_status_lbl = QLabel("🟡 Checking C2 Backend...")
+        self.backend_status_lbl.setStyleSheet("background-color: #1e2433; border: 1px solid #334155; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 11px;")
+        top_layout.addWidget(self.backend_status_lbl)
+        top_layout.addSpacing(10)
+
         self.ip_input = QLineEdit("192.168.102.76")
         self.ip_input.setPlaceholderText("Tester IP")
         self.ip_input.setFixedWidth(140)
         top_layout.addWidget(QLabel("IP:"))
         top_layout.addWidget(self.ip_input)
         main_layout.addWidget(top_bar)
+
 
         # Presets & Execution Options Bar
         opts_bar = QFrame()
@@ -251,3 +258,20 @@ class MainWindow(QMainWindow):
         else:
             self.log_view.append("[INFO] Starting test execution in local runner...")
             self.progress_bar.setValue(50)
+
+    def update_backend_status(self):
+        try:
+            from Scripts.Helpers.api_client import c2_api
+            if c2_api.is_online():
+                ver = c2_api.get_software_version()
+                state = c2_api.get_app_state()
+                conn = state.get("connectionState", "DISCONNECTED")
+                self.backend_status_lbl.setText(f"🟢 C2 Online (v{ver}) | {conn}")
+                self.backend_status_lbl.setStyleSheet("background-color: #064e3b; color: #34d399; border: 1px solid #059669; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 11px;")
+            else:
+                self.backend_status_lbl.setText("🔴 C2 Offline (Sim Available)")
+                self.backend_status_lbl.setStyleSheet("background-color: #450a0a; color: #f87171; border: 1px solid #dc2626; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 11px;")
+        except Exception:
+            self.backend_status_lbl.setText("⚪ C2 Offline")
+            self.backend_status_lbl.setStyleSheet("background-color: #1e2433; color: #94a3b8; border: 1px solid #334155; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 11px;")
+
