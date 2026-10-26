@@ -25,18 +25,26 @@ from Scripts.UI.HTML_Report import generate_html_report  # noqa: E402
 class PytestExecutionCollector:
     """Pytest plugin that records the real outcome of every test (setup, call and teardown)."""
 
-    def __init__(self, log_callback=None):
+    def __init__(self, log_callback=None, status_callback=None):
         self.results: dict[str, dict] = {}
         self.start_time = None
         self.end_time = None
         self.log_callback = log_callback
+        self.status_callback = status_callback
 
     def _log(self, msg: str) -> None:
         if self.log_callback:
             self.log_callback(msg)
 
+    def _status(self, node_id: str, status: str) -> None:
+        if self.status_callback:
+            self.status_callback(node_id, status)
+
     def pytest_sessionstart(self, session):
         self.start_time = time.time()
+
+    def pytest_runtest_logstart(self, nodeid, location):
+        self._status(nodeid, "RUNNING")
 
     def pytest_runtest_logreport(self, report):
         entry = self.results.setdefault(report.nodeid, {
@@ -52,13 +60,16 @@ class PytestExecutionCollector:
             elif isinstance(report.longrepr, tuple):
                 entry["TC_Remarks"] = str(report.longrepr[2])
             self._log(f"[{entry['TC_Result']}] {report.nodeid} - {entry['TC_Remarks']}")
+            self._status(report.nodeid, entry["TC_Result"])
         elif report.failed:
             phase = "" if report.when == "call" else f" ({report.when})"
             entry["TC_Result"] = "FAILED" if report.when == "call" else "ERROR"
             entry["TC_Remarks"] = (str(report.longrepr).splitlines() or ["failed"])[-1] + phase
             self._log(f"[{entry['TC_Result']}] {report.nodeid} - {entry['TC_Remarks']}")
+            self._status(report.nodeid, entry["TC_Result"])
         elif report.when == "call":
             self._log(f"[PASS] {report.nodeid} ({report.duration:.2f}s)")
+            self._status(report.nodeid, "PASSED")
 
     def pytest_sessionfinish(self, session, exitstatus):
         self.end_time = time.time()
@@ -90,6 +101,7 @@ class PytestExecutionCollector:
 class TestRunnerThread(QThread):
     __test__ = False
     log_signal = pyqtSignal(str)
+    status_signal = pyqtSignal(str, str)
     progress_signal = pyqtSignal(int)
     finished_signal = pyqtSignal()
 
@@ -100,7 +112,8 @@ class TestRunnerThread(QThread):
 
     def run(self):
         self.log_signal.emit("[INFO] pytest " + " ".join(self.test_args))
-        collector = PytestExecutionCollector(log_callback=self.log_signal.emit)
+        collector = PytestExecutionCollector(log_callback=self.log_signal.emit,
+                                             status_callback=self.status_signal.emit)
         exit_code = pytest.main(self.test_args, plugins=[collector])
         self.log_signal.emit(f"[INFO] pytest finished with exit code {int(exit_code)}: {collector.counts()}")
         self.progress_signal.emit(90)
@@ -146,7 +159,9 @@ class GUIController:
             args.append("--allow-hw-actions")
 
         self.runner = TestRunnerThread(args, dut_ip=dut_ip)
+        self.window.reset_statuses()
         self.runner.log_signal.connect(self.window.log_view.append)
+        self.runner.status_signal.connect(self.window.set_test_status)
         self.runner.progress_signal.connect(self.window.progress_bar.setValue)
         self.runner.finished_signal.connect(lambda: self.window.run_btn.setEnabled(True))
 

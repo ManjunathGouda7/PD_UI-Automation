@@ -4,14 +4,18 @@ Theme: Obsidian & Electric Amber.
 Features: test tree discovered from the test files, presets, live search, retries, live log.
 """
 import ast
+from dataclasses import dataclass, field
 from pathlib import Path
+import re
 
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -188,7 +192,12 @@ class MainWindow(QMainWindow):
         # Tree & Log view
         content_layout = QHBoxLayout()
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["Available Panels & Test Suites", "Status"])
+        self.tree.setHeaderLabels(["Panels & Test Cases", "Status"])
+        header = self.tree.header()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.tree.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         self.populate_tree()
         content_layout.addWidget(self.tree, 3)
 
@@ -214,22 +223,55 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(bottom_bar)
 
     def populate_tree(self):
-        """Builds the tree from Scripts/TestCases by parsing test classes, functions and markers."""
+        """Builds the tree from Scripts/TestCases: readable panel and test names, run status per test."""
         self.tree.clear()
+        self._items_by_node: dict[str, QTreeWidgetItem] = {}
         total = 0
-        for suite, tests in discover_tests().items():
-            suite_item = QTreeWidgetItem([suite, ""])
+        for suite in discover_tests():
+            suite_item = QTreeWidgetItem([f"{suite.title}  ({len(suite.tests)})", ""])
+            suite_item.setToolTip(0, suite.file)
             suite_item.setFlags(suite_item.flags() | Qt.ItemFlag.ItemIsAutoTristate | Qt.ItemFlag.ItemIsUserCheckable)
-            for node_id, name, markers in tests:
-                item = QTreeWidgetItem([name, ", ".join(sorted(markers))])
+            font = suite_item.font(0)
+            font.setBold(True)
+            suite_item.setFont(0, font)
+            for test in suite.tests:
+                item = QTreeWidgetItem([test.title, ""])
                 item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
                 item.setCheckState(0, Qt.CheckState.Checked)
-                item.setData(0, Qt.ItemDataRole.UserRole, (node_id, markers))
+                item.setData(0, Qt.ItemDataRole.UserRole, (test.node_id, test.markers))
+                tip = [test.description] if test.description else []
+                tip += [f"Tags: {', '.join(sorted(test.markers)) or '-'}", test.node_id]
+                item.setToolTip(0, "\n".join(tip))
                 suite_item.addChild(item)
+                self._items_by_node[test.node_id] = item
                 total += 1
             self.tree.addTopLevelItem(suite_item)
+        self.reset_statuses()
         self.tree.expandAll()
         self.test_count_lbl.setText(f"Showing {total} tests")
+
+    def reset_statuses(self):
+        for item in self._test_items():
+            markers = item.data(0, Qt.ItemDataRole.UserRole)[1]
+            ready = "Ready · changes tester" if "hardware" in markers else "Ready"
+            item.setText(1, ready)
+            item.setForeground(1, QColor("#94a3b8"))
+
+    _STATUS_COLORS = {"PASSED": "#34d399", "FAILED": "#f87171", "ERROR": "#f87171",
+                      "SKIPPED": "#fbbf24", "XFAIL": "#a78bfa", "RUNNING": "#60a5fa"}
+    _STATUS_RANK = {"RUNNING": 0, "PASSED": 1, "XFAIL": 2, "SKIPPED": 3, "FAILED": 4, "ERROR": 5}
+
+    def set_test_status(self, node_id: str, status: str):
+        """Live status from the runner. Parametrised cases roll up: the worst outcome wins."""
+        item = self._items_by_node.get(node_id.split("[", 1)[0])
+        if item is None:
+            return
+        current = item.text(1)
+        if "[" in node_id and current in self._STATUS_RANK and status != "RUNNING":
+            if self._STATUS_RANK[current] > self._STATUS_RANK.get(status, 0):
+                return
+        item.setText(1, status)
+        item.setForeground(1, QColor(self._STATUS_COLORS.get(status, "#f8fafc")))
 
     def _test_items(self):
         for i in range(self.tree.topLevelItemCount()):
@@ -263,7 +305,8 @@ class MainWindow(QMainWindow):
             child_matches = False
             for j in range(parent.childCount()):
                 child = parent.child(j)
-                match = parent_match or text in child.text(0).lower()
+                node_id = child.data(0, Qt.ItemDataRole.UserRole)[0].lower()
+                match = parent_match or text in child.text(0).lower() or text in node_id
                 child.setHidden(not match)
                 if match:
                     child_matches = True
@@ -298,6 +341,21 @@ class MainWindow(QMainWindow):
 TEST_DIR = Path(__file__).resolve().parent.parent / "TestCases"
 
 
+@dataclass
+class DiscoveredTest:
+    node_id: str
+    title: str
+    description: str
+    markers: set[str]
+
+
+@dataclass
+class DiscoveredSuite:
+    file: str
+    title: str
+    tests: list[DiscoveredTest] = field(default_factory=list)
+
+
 def _marker_names(decorators: list[ast.expr]) -> set[str]:
     names = set()
     for dec in decorators:
@@ -307,22 +365,49 @@ def _marker_names(decorators: list[ast.expr]) -> set[str]:
     return names - {"parametrize", "xfail", "skip", "skipif"}
 
 
-def discover_tests() -> dict[str, list[tuple[str, str, set[str]]]]:
-    """{suite file: [(pytest node id, test name, markers)]} without importing the test modules."""
-    suites: dict[str, list[tuple[str, str, set[str]]]] = {}
+def humanize_test_name(name: str) -> str:
+    """'test_TC_01_tester_info_table_has_all_fields' -> 'TC_01 · Tester info table has all fields'."""
+    body = name.removeprefix("test_")
+    match = re.match(r"(TC_\d+)_(.*)", body)
+    tc_id, words = (match.group(1), match.group(2)) if match else ("", body)
+    text = words.replace("_", " ").strip()
+    text = text[:1].upper() + text[1:]
+    for acronym in ("api", "ui", "ip", "dut", "vif", "html", "url"):
+        text = re.sub(rf"\b{acronym}\b", acronym.upper(), text, flags=re.IGNORECASE)
+    return f"{tc_id} · {text}" if tc_id else text
+
+
+def _suite_title(module: ast.Module, filename: str) -> str:
+    """First docstring line ('Panel 1: Connection Setup.'), else the file name."""
+    doc = (ast.get_docstring(module) or "").strip().splitlines()
+    return doc[0].rstrip(".") if doc else filename
+
+
+def _discovered_test(fn: ast.FunctionDef, prefix: str, inherited: set[str]) -> DiscoveredTest:
+    doc = (ast.get_docstring(fn) or "").strip().splitlines()
+    return DiscoveredTest(
+        node_id=f"{prefix}::{fn.name}",
+        title=humanize_test_name(fn.name),
+        description=doc[0] if doc else "",
+        markers=inherited | _marker_names(fn.decorator_list),
+    )
+
+
+def discover_tests() -> list[DiscoveredSuite]:
+    """Test suites and cases read from the test files without importing them."""
+    suites: list[DiscoveredSuite] = []
     for path in sorted(TEST_DIR.glob("test_*.py")):
         rel = f"Scripts/TestCases/{path.name}"
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        tests = []
-        for node in tree.body:
+        module = ast.parse(path.read_text(encoding="utf-8"))
+        suite = DiscoveredSuite(file=rel, title=_suite_title(module, path.name))
+        for node in module.body:
             if isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
                 cls_markers = _marker_names(node.decorator_list)
                 for fn in node.body:
                     if isinstance(fn, ast.FunctionDef) and fn.name.startswith("test_"):
-                        tests.append((f"{rel}::{node.name}::{fn.name}", fn.name,
-                                      cls_markers | _marker_names(fn.decorator_list)))
+                        suite.tests.append(_discovered_test(fn, f"{rel}::{node.name}", cls_markers))
             elif isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
-                tests.append((f"{rel}::{node.name}", node.name, _marker_names(node.decorator_list)))
-        if tests:
-            suites[path.name] = tests
+                suite.tests.append(_discovered_test(node, rel, set()))
+        if suite.tests:
+            suites.append(suite)
     return suites
