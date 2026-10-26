@@ -2,8 +2,10 @@
 Excel Test Execution Report Generator using openpyxl.
 """
 from typing import Any
+
 import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.styles import Alignment, Font, PatternFill
+
 
 def generate_excel_report(report_data: dict[str, Any], output_path: str) -> None:
     wb = openpyxl.Workbook()
@@ -39,7 +41,7 @@ def generate_excel_report(report_data: dict[str, Any], output_path: str) -> None
 
         if tc_result == "PASSED":
             res_cell.fill = pass_fill
-        elif tc_result == "FAILED":
+        elif tc_result in ("FAILED", "ERROR"):
             res_cell.fill = fail_fill
 
     # Adjust column widths

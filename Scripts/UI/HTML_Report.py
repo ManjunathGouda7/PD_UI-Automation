@@ -5,13 +5,14 @@ Includes Dark/Light mode toggle, visual summary stats, and step inspection.
 import html
 from typing import Any
 
+
 def generate_html_report(report_data: dict[str, Any], output_path: str) -> None:
     report_name = html.escape(str(report_data.get("Report Name", "PD_Report")))
     total_tests = report_data.get("Total Tests", 0)
     passed = report_data.get("Passed", 0)
     failed = report_data.get("Failed", 0)
     execution_time = html.escape(str(report_data.get("Total Time", "N/A")))
-    dut_ip = html.escape(str(report_data.get("DUT_IP", "192.168.102.76")))
+    dut_ip = html.escape(str(report_data.get("DUT_IP", "N/A")))
     test_cases = report_data.get("Test Cases", [])
 
     pass_pct = round((passed / total_tests) * 100, 1) if total_tests > 0 else 0
@@ -21,7 +22,7 @@ def generate_html_report(report_data: dict[str, Any], output_path: str) -> None:
         tc_id = html.escape(str(tc.get("TC_ID", "")))
         tc_result = str(tc.get("TC_Result", "UNKNOWN")).upper()
         duration = html.escape(str(tc.get("TC_Execution_Duration", "N/A")))
-        badge_cls = "badge-pass" if tc_result == "PASSED" else ("badge-fail" if tc_result == "FAILED" else "badge-other")
+        badge_cls = "badge-pass" if tc_result == "PASSED" else ("badge-fail" if tc_result in ("FAILED", "ERROR") else "badge-other")
 
         rows_html.append(f"""
         <tr>

@@ -1,40 +1,37 @@
 """
-Centralized Test Data Manager for USB PD C2 UI Automation.
+Centralized test data access (jsons/test_data.json).
 """
-from dataclasses import dataclass
+from __future__ import annotations
+
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
 import orjson
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+DATA_FILE = ROOT_DIR / "jsons" / "test_data.json"
 
-@dataclass
+
 class TestDataManager:
     __test__ = False
-    _data: dict[str, Any] | None = None
 
-    @classmethod
-    def load(cls) -> dict[str, Any]:
-        if cls._data is None:
-            data_file = ROOT_DIR / "jsons" / "test_data.json"
-            if data_file.exists():
-                with open(data_file, "rb") as f:
-                    cls._data = orjson.loads(f.read())
-            else:
-                cls._data = {}
-        return cls._data
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def load() -> dict[str, Any]:
+        return orjson.loads(DATA_FILE.read_bytes())
 
-    @classmethod
-    def get_profile(cls, name: str = "provider_epr") -> dict[str, Any]:
-        profiles = cls.load().get("dut_profiles", {})
-        return profiles.get(name, {})
+    def section(self, name: str) -> dict[str, Any]:
+        data = self.load()
+        if name not in data:
+            raise KeyError(f"Section '{name}' missing from {DATA_FILE}")
+        return data[name]
 
-    @classmethod
-    def get_connection_defaults(cls) -> dict[str, Any]:
-        return cls.load().get("connection_defaults", {
-            "ip": "192.168.102.76",
-            "port": "5003",
-            "device_serial": "GRL-V-DPWR-EPR-0002"
-        })
+    def get_profile(self, name: str) -> dict[str, Any]:
+        profiles = self.section("dut_profiles")
+        if name not in profiles:
+            raise KeyError(f"DUT profile '{name}' not found; available: {sorted(profiles)}")
+        return profiles[name]
+
 
 test_data_manager = TestDataManager()

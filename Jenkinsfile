@@ -1,38 +1,50 @@
 pipeline {
-    agent any
+    // Needs a Windows agent on the bench PC that runs the GRL software and is wired to the tester.
+    agent { label 'grl-pd-bench' }
+
+    options {
+        timeout(time: 90, unit: 'MINUTES')
+        disableConcurrentBuilds()   // one physical tester: never run two builds against it at once
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+    }
 
     parameters {
-        string(name: 'DUT_IP', defaultValue: '192.168.102.76', description: 'GRL USB PD C2 Hardware IP')
-        string(name: 'DUT_PORT', defaultValue: '5003', description: 'Web Application Port')
-        booleanParam(name: 'HEADLESS', defaultValue: true, description: 'Run Playwright in headless mode')
-        choice(name: 'TEST_SCOPE', choices: ['Smoke', 'Full', 'Smart'], description: 'Execution scope')
-        string(name: 'PARALLEL_WORKERS', defaultValue: '2', description: 'pytest-xdist workers')
-        string(name: 'RERUN_COUNT', defaultValue: '1', description: 'Number of retries for flaky failures')
+        string(name: 'BASE_URL', defaultValue: 'http://localhost:5003', description: 'GRL C2 software host (version page is auto-resolved)')
+        string(name: 'DUT_IP', defaultValue: '192.168.255.1', description: 'Tester IP used by connect tests')
+        choice(name: 'TEST_SCOPE', choices: ['smoke', 'full', 'api', 'smart'], description: 'Execution scope')
+        booleanParam(name: 'ALLOW_HW_ACTIONS', defaultValue: false, description: 'Run tests that change tester state')
+        booleanParam(name: 'STRICT_HARDWARE', defaultValue: false, description: 'Fail (not skip) when no tester is connected')
+        string(name: 'RERUN_COUNT', defaultValue: '1', description: 'Reruns for failed tests')
     }
 
     environment {
-        PYTHON = 'C:\\Users\\GRL\\AppData\\Local\\Programs\\Python\\Python313\\python.exe'
+        BASE_URL = "${params.BASE_URL}"
         DUT_IP = "${params.DUT_IP}"
-        HEADLESS = "${params.HEADLESS}"
+        HEADLESS = 'true'
+        PYTHONUNBUFFERED = '1'
     }
 
     stages {
+        stage('Setup') {
+            steps {
+                bat 'python -m pip install -q -r requirements.txt'
+                bat 'python -m playwright install chromium'
+            }
+        }
+
         stage('Code Quality') {
             steps {
                 bat 'python -m ruff check .'
             }
         }
 
-        stage('Execute USB PD C2 Tests') {
+        stage('Tests') {
             steps {
                 script {
-                    def workerArgs = params.PARALLEL_WORKERS.toInteger() > 1 ? "-n ${params.PARALLEL_WORKERS} --dist=loadfile" : ""
-                    def rerunArgs = params.RERUN_COUNT.toInteger() > 0 ? "--reruns ${params.RERUN_COUNT} --reruns-delay 2" : ""
-                    def marker = params.TEST_SCOPE == 'Smoke' ? "-m smoke" : ""
-
-                    bat """
-                        python -m pytest -c Configurations\\pytest.ini Scripts\\TestCases ${marker} ${workerArgs} ${rerunArgs} --alluredir=allure-results -v
-                    """
+                    def scope = params.TEST_SCOPE == 'smart' ? '--smart' : "--mode ${params.TEST_SCOPE}"
+                    def hw = params.ALLOW_HW_ACTIONS ? '--allow-hw-actions' : ''
+                    def strict = params.STRICT_HARDWARE ? '--strict-hardware' : ''
+                    bat "python run.py ${scope} ${hw} ${strict} --retries ${params.RERUN_COUNT} --allure --headless"
                 }
             }
         }
@@ -40,6 +52,7 @@ pipeline {
 
     post {
         always {
+            junit allowEmptyResults: true, testResults: 'Reports/junit.xml'
             archiveArtifacts artifacts: 'Reports/**, logs/**', allowEmptyArchive: true
         }
     }

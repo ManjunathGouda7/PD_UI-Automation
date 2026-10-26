@@ -1,10 +1,11 @@
 """
 Performance and Latency Tracker for GRL USB PD C2 UI Automation.
 """
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
+import time
 from typing import Any
+
 import orjson
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent

@@ -1,15 +1,21 @@
 """
 Centralized Configuration Manager for GRL-V-DPWR-EPR (USB PD C2).
-Supports tiered fallback: Environment variables -> Inputs.json -> Defaults.
+
+Resolution order for every key: environment variable -> jsons/Inputs.json -> default.
 """
 import os
 from pathlib import Path
 from typing import Any
-import orjson
+import urllib.request
+
 from dotenv import load_dotenv
+import orjson
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(ROOT_DIR / "Configurations" / ".env")
+
+_TRUE = ("true", "1", "yes", "on")
+_FALSE = ("false", "0", "no", "off")
 
 
 class Config:
@@ -17,109 +23,107 @@ class Config:
     _cached_resolved_url: str | None = None
 
     _KEY_ALIASES: dict[str, list[str]] = {
-        "BASE_URL": ["BaseURL", "base_url", "BASE_URL", "Url", "URL"],
-        "DUT_IP": ["DefaultIP", "DUT_IP", "dut_ip", "IP", "ip"],
-        "DUT_PORT": ["Port", "DUT_PORT", "dut_port", "port"],
-        "DUT_TYPE": ["DUTType", "DUT_TYPE", "dut_type"],
-        "CABLE_MODEL": ["CableModel", "CABLE_MODEL", "cable_model"],
-        "AUTO_DETECT_VERSION": ["AutoDetectVersion", "auto_detect_version", "AUTO_DETECT_VERSION"],
-        "HEADLESS": ["HEADLESS", "Headless", "headless"],
+        "BASE_URL": ["BaseURL", "base_url", "Url", "URL"],
+        "DUT_IP": ["DefaultIP", "dut_ip", "IP", "ip"],
+        "DUT_PORT": ["Port", "dut_port", "port"],
+        "DUT_TYPE": ["DUTType", "dut_type"],
+        "CABLE_MODEL": ["CableModel", "cable_model"],
+        "AUTO_DETECT_VERSION": ["AutoDetectVersion", "auto_detect_version"],
+        "HEADLESS": ["Headless", "headless"],
     }
 
     @classmethod
     def get_inputs(cls) -> dict[str, Any]:
         if cls._cached_inputs is None:
             inputs_file = ROOT_DIR / "jsons" / "Inputs.json"
-            if inputs_file.exists():
-                try:
-                    with open(inputs_file, "rb") as f:
-                        cls._cached_inputs = orjson.loads(f.read())
-                except Exception:
-                    cls._cached_inputs = {}
-            else:
+            try:
+                cls._cached_inputs = orjson.loads(inputs_file.read_bytes())
+            except (OSError, orjson.JSONDecodeError):
                 cls._cached_inputs = {}
         return cls._cached_inputs
 
     @classmethod
     def get(cls, key: str, default: Any = None) -> Any:
-        # 1. Environment variable check
+        """Returns the raw value for `key` (strings stay strings; use get_bool for flags)."""
         env_val = os.getenv(key)
-        if env_val is not None:
-            if env_val.lower() in ("true", "1", "yes"):
-                return True
-            if env_val.lower() in ("false", "0", "no"):
-                return False
+        if env_val is not None and env_val != "":
             return env_val
 
-        # 2. Inputs.json check with alias support
-        inputs = cls.get_inputs()
-        pd_config = inputs.get("GRL-V-DPWR-EPR", {}).get("PD", {})
-        if key in pd_config:
-            return pd_config[key]
-
-        aliases = cls._KEY_ALIASES.get(key, [])
-        for alias in aliases:
-            if alias in pd_config:
-                return pd_config[alias]
-
-        # Case-insensitive fallback
-        normalized = key.lower().replace("_", "")
-        for k, v in pd_config.items():
-            if k.lower().replace("_", "") == normalized:
-                return v
-
+        pd_config = cls.get_inputs().get("GRL-V-DPWR-EPR", {}).get("PD", {})
+        for candidate in [key, *cls._KEY_ALIASES.get(key, [])]:
+            if candidate in pd_config and pd_config[candidate] not in (None, ""):
+                return pd_config[candidate]
         return default
 
     @classmethod
-    def get_url_version_extension(cls, host_url: str) -> str | None:
-        """
-        Dynamically query GRL software endpoint /api/App/GetURLVersionExtension
-        to resolve dynamic version extensions (e.g. 'v1.1.1').
-        """
-        import urllib.request
-        clean_host = host_url.rstrip("/")
-        if clean_host.endswith(".html"):
-            clean_host = "/".join(clean_host.split("/")[:-1])
+    def get_bool(cls, key: str, default: bool = False) -> bool:
+        val = cls.get(key, default)
+        if isinstance(val, bool):
+            return val
+        text = str(val).strip().lower()
+        if text in _TRUE:
+            return True
+        if text in _FALSE:
+            return False
+        return default
 
-        api_url = f"{clean_host}/api/App/GetURLVersionExtension"
+    @classmethod
+    def get_int(cls, key: str, default: int) -> int:
+        try:
+            return int(cls.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    # ------------------------------------------------------------------
+    # URLs
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def api_host(cls) -> str:
+        """Base host of the C2 backend, e.g. http://localhost:5003 (no page suffix)."""
+        raw_url = str(cls.get("BASE_URL", "http://localhost:5003")).rstrip("/")
+        if raw_url.endswith(".html"):
+            raw_url = raw_url.rsplit("/", 1)[0]
+        return raw_url
+
+    @classmethod
+    def get_url_version_extension(cls, host_url: str | None = None) -> str | None:
+        """Queries /api/App/GetURLVersionExtension (e.g. 'v1.1.4'); None when unreachable."""
+        api_url = f"{(host_url or cls.api_host()).rstrip('/')}/api/App/GetURLVersionExtension"
         try:
             req = urllib.request.Request(api_url, headers={"User-Agent": "GRL-Automation"})
-            with urllib.request.urlopen(req, timeout=2.0) as resp:
-                if resp.status == 200:
-                    ver = resp.read().decode("utf-8").strip().strip('"').strip("'")
-                    if ver:
-                        return ver
-        except Exception:
-            pass
-        return None
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                ver = resp.read().decode("utf-8").strip().strip('"').strip("'")
+                return ver or None
+        except OSError:
+            return None
 
     @classmethod
     def base_url(cls) -> str:
+        """
+        URL of the web UI. An explicit *.html BASE_URL is used as-is. Otherwise the
+        versioned page is resolved from the backend; if that fails the host root is
+        used, which redirects to the current versioned page by itself.
+        """
         if cls._cached_resolved_url:
             return cls._cached_resolved_url
 
-        raw_url = str(cls.get("BASE_URL", "http://localhost:5003"))
-        auto_detect = cls.get("AUTO_DETECT_VERSION", True)
+        raw_url = str(cls.get("BASE_URL", "http://localhost:5003")).rstrip("/")
+        resolved = raw_url
+        if not raw_url.endswith(".html"):
+            version = cls.get_url_version_extension() if cls.get_bool("AUTO_DETECT_VERSION", True) else None
+            resolved = f"{raw_url}/{version}.html" if version else f"{raw_url}/"
 
-        resolved_url = raw_url
+        cls._cached_resolved_url = resolved
+        return resolved
 
-        if auto_detect:
-            version = cls.get_url_version_extension(raw_url)
-            if version:
-                clean_host = raw_url.rstrip("/")
-                if clean_host.endswith(".html"):
-                    clean_host = "/".join(clean_host.split("/")[:-1])
-                resolved_url = f"{clean_host}/{version}.html"
-
-        if not resolved_url.endswith(".html"):
-            resolved_url = f"{resolved_url.rstrip('/')}/v1.1.1.html"
-
-        cls._cached_resolved_url = resolved_url
-        return cls._cached_resolved_url
+    # ------------------------------------------------------------------
+    # Hardware / run settings
+    # ------------------------------------------------------------------
 
     @classmethod
     def dut_ip(cls) -> str:
-        return str(cls.get("DUT_IP", "192.168.102.76"))
+        return str(cls.get("DUT_IP", "192.168.255.1"))
 
     @classmethod
     def dut_port(cls) -> str:
@@ -127,38 +131,50 @@ class Config:
 
     @classmethod
     def is_headless(cls) -> bool:
-        val = cls.get("HEADLESS", False)
-        return bool(val)
+        return cls.get_bool("HEADLESS", True)
 
     @classmethod
-    def api_host(cls) -> str:
-        """Returns the base API host, e.g. http://localhost:5003"""
-        raw_url = str(cls.get("BASE_URL", "http://localhost:5003")).rstrip("/")
-        if raw_url.endswith(".html"):
-            raw_url = "/".join(raw_url.split("/")[:-1])
-        return raw_url
+    def is_mock_mode(cls) -> bool:
+        """True when the run targets the offline API mock instead of the real C2 backend."""
+        return cls.get_bool("MOCK_SERVER", False)
+
+    @classmethod
+    def allow_hw_actions(cls) -> bool:
+        """
+        Gate for tests that change tester/backend state (connect, scan, apply config,
+        attach/detach, read device data, ...). Off by default so a normal run is read-only.
+        """
+        return cls.get_bool("ALLOW_HW_ACTIONS", False)
+
+    @classmethod
+    def strict_hardware(cls) -> bool:
+        """When true, tests needing a connected tester fail instead of skipping if it is offline."""
+        return cls.get_bool("STRICT_HARDWARE", False)
+
+    @classmethod
+    def ui_timeout_ms(cls) -> int:
+        return cls.get_int("UI_TIMEOUT_MS", 10000)
+
+    @classmethod
+    def page_load_timeout_ms(cls) -> int:
+        return cls.get_int("PAGE_LOAD_TIMEOUT_MS", 30000)
 
     @classmethod
     def get_api_endpoint(cls, key: str, default: str = "") -> str:
         """
-        Returns full URL for configured API key or builds from api_host.
-        Supports:
-          - Direct alias: get_api_endpoint("sw_version")
-          - Controller dot notation: get_api_endpoint("App.GetSoftwareVersion")
-          - Controller slash notation: get_api_endpoint("App/GetSoftwareVersion")
-          - Endpoint search across all controllers: get_api_endpoint("GetSoftwareVersion")
+        Returns full URL for a configured API key or builds it from api_host.
+        Supports direct alias ("sw_version"), controller notation ("App.GetSoftwareVersion"
+        or "App/GetSoftwareVersion") and bare endpoint search ("GetSoftwareVersion").
         """
-        inputs = cls.get_inputs()
-        apis = inputs.get("GRL-V-DPWR-EPR", {}).get("PD", {}).get("apis", {})
+        apis = cls.get_inputs().get("GRL-V-DPWR-EPR", {}).get("PD", {}).get("apis", {})
         if key in apis and isinstance(apis[key], str):
             return str(apis[key])
 
         normalized_key = key.replace("/", ".")
         if "." in normalized_key:
             controller, subkey = normalized_key.split(".", 1)
-            if controller in apis and isinstance(apis[controller], dict):
-                if subkey in apis[controller]:
-                    return str(apis[controller][subkey])
+            if isinstance(apis.get(controller), dict) and subkey in apis[controller]:
+                return str(apis[controller][subkey])
 
         for val in apis.values():
             if isinstance(val, dict) and key in val:
@@ -167,5 +183,3 @@ class Config:
         if not default and key:
             return f"{cls.api_host()}/api/{key.lstrip('/')}"
         return default
-
-

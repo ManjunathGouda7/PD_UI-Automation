@@ -1,7 +1,45 @@
+[project]
+name = "grl-pd-c2-ui-automation"
+version = "2.0.0"
+description = "UI + API test automation for GRL-V-DPWR-EPR (USB PD C2) test software"
+requires-python = ">=3.10"
+
 [tool.ruff]
 line-length = 120
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F"]
-ignore = ["E501"]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["Scripts"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers --strict-config -p no:faulthandler"
+testpaths = ["Scripts/TestCases"]
+pythonpath = ["."]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+timeout = 300
+junit_family = "xunit2"
+log_level = "INFO"
+markers = [
+    "smoke: quick read-only sanity tests (UI + API)",
+    "regression: full compliance regression (selected by running everything)",
+    "ui: needs the real C2 web UI (added automatically to tests using the `page` fixture)",
+    "api: backend REST API tests (no browser)",
+    "hardware: changes tester/backend state; skipped unless --allow-hw-actions / ALLOW_HW_ACTIONS=true",
+    "requires_tester: needs a connected tester; skipped (or failed with --strict-hardware) otherwise",
+    "shell: application shell (header, navigation)",
+    "connection: Connection Setup panel",
+    "product_cap: Product Capability panel",
+    "test_config: Test Config panel",
+    "results: Results panel",
+    "report: Report panel",
+    "configure: Configure panel",
+    "loopback: LoopBack panel",
+    "help: Help panel",
+]

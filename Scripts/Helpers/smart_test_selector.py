@@ -1,82 +1,62 @@
 """
-Smart Test Selection for GRL USB PD C2 UI Automation.
-Analyzes Git diff to select relevant test suites based on changed files.
+Smart test selection: picks test suites affected by the files changed in git.
 """
 import subprocess
 
+SUITES = "Scripts/TestCases"
+
+# Changing any of these affects every suite.
+GLOBAL_PATTERNS = [
+    "Scripts/conftest.py", "Scripts/Pages/base_page.py", "Scripts/Pages/app_page.py",
+    "Scripts/Helpers/Locators.py", "Scripts/Helpers/config.py", "Scripts/Helpers/popups.py",
+    "pyproject.toml", "requirements.txt",
+]
+
 PANEL_MAPPINGS = {
-    "connection": ["Scripts/Pages/connection_page.py", "test_01_connection.py"],
-    "product_cap": ["Scripts/Pages/product_capability_page.py", "test_02_product_cap.py"],
-    "test_config": ["Scripts/Pages/test_config_page.py", "test_03_test_config.py"],
-    "results": ["Scripts/Pages/results_page.py", "test_04_results.py"],
-    "report": ["Scripts/Pages/report_page.py", "test_05_report.py"],
-    "configure": ["Scripts/Pages/configure_page.py", "test_06_configure.py"],
-    "loopback": ["Scripts/Pages/loopback_page.py", "test_07_loopback.py"],
-    "help": ["Scripts/Pages/help_page.py", "test_08_help.py"],
-    "api": ["api_client.py", "test_09_api.py", "Inputs.json"],
+    "test_00_app_shell.py": ["app_page.py", "test_00_app_shell.py"],
+    "test_01_connection.py": ["connection_page.py", "test_01_connection.py"],
+    "test_02_product_cap.py": ["product_capability_page.py", "test_02_product_cap.py"],
+    "test_03_test_config.py": ["test_config_page.py", "test_03_test_config.py"],
+    "test_04_results.py": ["results_page.py", "test_04_results.py"],
+    "test_05_report.py": ["report_page.py", "test_05_report.py"],
+    "test_06_configure.py": ["configure_page.py", "test_06_configure.py"],
+    "test_07_loopback.py": ["loopback_page.py", "test_07_loopback.py"],
+    "test_08_help.py": ["help_page.py", "test_08_help.py"],
+    "test_09_api.py": ["api_client.py", "swagger_contract.py", "mock_server.py", "test_09_api.py", "Inputs.json"],
 }
+FALLBACK = [f"{SUITES}/test_00_app_shell.py", f"{SUITES}/test_09_api.py"]
+
+
+def _git_lines(*args: str) -> list[str]:
+    try:
+        res = subprocess.run(["git", *args], capture_output=True, text=True, check=False)
+    except OSError:
+        return []
+    return res.stdout.splitlines() if res.returncode == 0 else []
 
 
 def get_changed_files() -> list[str]:
-    """Inspects Git status for modified files in working directory or latest commit."""
-    files = set()
-    try:
-        # 1. Check uncommitted / staged working changes
-        res_work = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        if res_work.returncode == 0 and res_work.stdout.strip():
-            files.update(res_work.stdout.strip().splitlines())
-
-        # 2. Check untracked files
-        res_untracked = subprocess.run(
-            ["git", "status", "--porcelain"],
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        if res_untracked.returncode == 0 and res_untracked.stdout.strip():
-            for line in res_untracked.stdout.strip().splitlines():
-                parts = line.strip().split()
-                if len(parts) >= 2:
-                    files.add(parts[-1])
-
-        # 3. Fallback to latest commit diff
-        if not files:
-            res_commit = subprocess.run(
-                ["git", "diff", "--name-only", "HEAD~1"],
-                capture_output=True,
-                text=True,
-                check=False
-            )
-            if res_commit.returncode == 0 and res_commit.stdout.strip():
-                files.update(res_commit.stdout.strip().splitlines())
-    except Exception:
-        pass
-    return list(files)
+    """Uncommitted + untracked changes; falls back to the last commit when the tree is clean."""
+    files = set(_git_lines("diff", "--name-only", "HEAD"))
+    files.update(_git_lines("ls-files", "--others", "--exclude-standard"))
+    if not files:
+        files.update(_git_lines("diff", "--name-only", "HEAD~1", "HEAD"))
+    return sorted(f.replace("\\", "/") for f in files if f.strip())
 
 
 def select_tests() -> list[str]:
-    """Returns list of test file paths matching recent changes."""
     changed = get_changed_files()
-    if not changed:
-        return ["Scripts/TestCases/test_01_connection.py", "Scripts/TestCases/test_09_api.py"]
+    if any(any(g in f for g in GLOBAL_PATTERNS) for f in changed):
+        return [SUITES]
 
-    selected = set()
-    for file_path in changed:
-        normalized_path = file_path.replace("\\", "/")
-        for panel, patterns in PANEL_MAPPINGS.items():
-            if any(p.lower() in normalized_path.lower() for p in patterns):
-                selected.add(f"Scripts/TestCases/{patterns[1]}")
-
-    if not selected:
-        return ["Scripts/TestCases/test_01_connection.py", "Scripts/TestCases/test_09_api.py"]
-    return sorted(list(selected))
+    selected = {
+        f"{SUITES}/{suite}"
+        for f in changed
+        for suite, patterns in PANEL_MAPPINGS.items()
+        if any(p.lower() in f.lower() for p in patterns)
+    }
+    return sorted(selected) or FALLBACK
 
 
 if __name__ == "__main__":
-    tests = select_tests()
-    print(" ".join(tests))
+    print(" ".join(select_tests()))

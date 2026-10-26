@@ -1,36 +1,49 @@
 """
-Page Object Model for Report Panel.
+Page Object Model for the Report panel.
 """
-from playwright.sync_api import Page
+from __future__ import annotations
+
+from playwright.sync_api import Page, expect
+
+from Scripts.Helpers.Locators import AppLocators, ReportLocators
 from Scripts.Pages.base_page import BasePage
-from Scripts.Helpers.Locators import NavigationLocators, ReportLocators
-from Scripts.Helpers.logger import logger
 
 
 class ReportPage(BasePage):
+    PANEL_NAME = "Report"
+
+    BUTTONS = {
+        "View Report": ReportLocators.VIEW_REPORT_BTN,
+        "Download Current HTML Report": ReportLocators.DOWNLOAD_HTML_BTN,
+        "Download Current DUT Report Data": ReportLocators.DOWNLOAD_DUT_BTN,
+        "Report Data Management": ReportLocators.REPORT_DATA_MGMT_BTN,
+    }
+
     def __init__(self, page: Page):
         super().__init__(page)
 
-    def open_panel(self) -> None:
-        self.switch_tab(NavigationLocators.TAB_REPORT)
+    def report_location(self) -> str:
+        """Path printed under 'Test Reports Location'."""
+        paragraphs = self.panel.locator(ReportLocators.REPORT_LOCATION)
+        expect(paragraphs).to_have_count(2, timeout=self.timeout)
+        return paragraphs.nth(1).inner_text().strip()
 
-    def view_report(self) -> bool:
-        logger.info("Clicking View Report...")
-        if self.is_visible(ReportLocators.VIEW_REPORT_BTN):
-            self.click(ReportLocators.VIEW_REPORT_BTN)
-            return True
-        return False
+    def button_labels(self) -> dict[str, str]:
+        return {name: self.text(sel) for name, sel in self.BUTTONS.items()}
 
-    def download_html_report(self) -> bool:
-        logger.info("Triggering HTML Report Download...")
-        if self.is_visible(ReportLocators.DOWNLOAD_HTML_BTN):
-            self.click(ReportLocators.DOWNLOAD_HTML_BTN)
-            return True
-        return False
+    def open_download_html_prompt(self) -> dict[str, str]:
+        """
+        Clicks 'Download Current HTML Report', which opens a 'Download File' prompt with a
+        file name field and Ok / Cancel. Returns the prompt details; leaves it open.
+        """
+        self.click(ReportLocators.DOWNLOAD_HTML_BTN)
+        expect(self.page.locator(AppLocators.POPUP_CANCEL)).to_be_visible(timeout=self.timeout)
+        return {
+            "title": self.page.locator(AppLocators.POPUP_TITLE).inner_text().strip(),
+            "file_name": self.page.locator(AppLocators.POPUP_INPUT).input_value(),
+            "buttons": ",".join(b.strip() for b in self.page.locator(AppLocators.POPUP_BUTTONS).all_inner_texts()),
+        }
 
-    def download_dut_data(self) -> bool:
-        logger.info("Triggering DUT Data Download...")
-        if self.is_visible(ReportLocators.DOWNLOAD_DUT_BTN):
-            self.click(ReportLocators.DOWNLOAD_DUT_BTN)
-            return True
-        return False
+    def cancel_popup(self) -> None:
+        self.page.locator(AppLocators.POPUP_CANCEL).click()
+        expect(self.page.locator(AppLocators.POPUP)).to_have_count(0, timeout=self.timeout)

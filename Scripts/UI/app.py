@@ -1,14 +1,28 @@
 """
 Modern PyQt6 Desktop GUI Test Runner for GRL USB PD C2 UI Automation.
 Theme: Obsidian & Electric Amber.
-Features: Live Test Search, Presets, Parallel Workers, Retries, Live Progress.
+Features: test tree discovered from the test files, presets, live search, retries, live log.
 """
-from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QLineEdit, QComboBox, QCheckBox, QProgressBar,
-    QTextEdit, QTreeWidget, QTreeWidgetItem, QFrame
-)
+import ast
+from pathlib import Path
+
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QProgressBar,
+    QPushButton,
+    QTextEdit,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 DARK_STYLESHEET = """
 QMainWindow {
@@ -115,7 +129,8 @@ class MainWindow(QMainWindow):
         top_layout.addWidget(self.backend_status_lbl)
         top_layout.addSpacing(10)
 
-        self.ip_input = QLineEdit("192.168.102.76")
+        from Scripts.Helpers.config import Config
+        self.ip_input = QLineEdit(Config.dut_ip())
         self.ip_input.setPlaceholderText("Tester IP")
         self.ip_input.setFixedWidth(140)
         top_layout.addWidget(QLabel("IP:"))
@@ -132,7 +147,7 @@ class MainWindow(QMainWindow):
         btn_smoke.clicked.connect(self.select_smoke_preset)
         opts_layout.addWidget(btn_smoke)
 
-        btn_full = QPushButton("🎯 Full Suite (207 Tests)")
+        btn_full = QPushButton("🎯 Full Suite")
         btn_full.clicked.connect(self.select_full_preset)
         opts_layout.addWidget(btn_full)
 
@@ -141,16 +156,15 @@ class MainWindow(QMainWindow):
         opts_layout.addWidget(btn_clear)
 
         opts_layout.addSpacing(20)
-        opts_layout.addWidget(QLabel("Workers:"))
-        self.workers_combo = QComboBox()
-        self.workers_combo.addItems(["1", "2", "4"])
-        opts_layout.addWidget(self.workers_combo)
-
         opts_layout.addWidget(QLabel("Retries:"))
         self.retries_combo = QComboBox()
         self.retries_combo.addItems(["0", "1", "2"])
-        self.retries_combo.setCurrentText("1")
+        self.retries_combo.setCurrentText("0")
         opts_layout.addWidget(self.retries_combo)
+
+        self.hw_actions_chk = QCheckBox("Allow hardware actions")
+        self.hw_actions_chk.setToolTip("Also run tests that connect, apply configuration or otherwise change the tester")
+        opts_layout.addWidget(self.hw_actions_chk)
 
         self.headless_chk = QCheckBox("Headless Browser")
         self.headless_chk.setChecked(False)
@@ -167,7 +181,7 @@ class MainWindow(QMainWindow):
         self.search_input.setPlaceholderText("🔍 Search tests by name or panel...")
         self.search_input.textChanged.connect(self.filter_tests)
         sb_layout.addWidget(self.search_input)
-        self.test_count_lbl = QLabel("Showing 207 tests")
+        self.test_count_lbl = QLabel("")
         sb_layout.addWidget(self.test_count_lbl)
         main_layout.addWidget(search_bar)
 
@@ -200,40 +214,45 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(bottom_bar)
 
     def populate_tree(self):
+        """Builds the tree from Scripts/TestCases by parsing test classes, functions and markers."""
         self.tree.clear()
-        panels = [
-            ("Panel 1: Connection Setup", ["test_TC_01_verify_connection_panel_loaded", "test_TC_02_verify_network_scan_and_ip_selection", "test_TC_03_verify_connect_hardware_tester", "test_TC_04_verify_tester_status_indicators"]),
-            ("Panel 2: Product Capability", ["test_TC_01_verify_product_capability_panel_navigation", "test_TC_02_verify_dut_role_selection", "test_TC_03_verify_cable_selection", "test_TC_04_verify_read_device_trigger"]),
-            ("Panel 3: Test Configuration (207 Tests)", ["test_TC_01_verify_test_config_panel_navigation", "test_TC_02_verify_test_categories_present", "test_TC_03_verify_search_filtering", "test_TC_04_verify_select_and_deselect_all_tests", "test_TC_05_verify_engineer_metadata_input"]),
-            ("Panel 4: Results & Waveforms", ["test_TC_01_verify_results_panel_navigation", "test_TC_02_verify_chart_canvas_or_controls", "test_TC_03_verify_marker_controls", "test_TC_04_verify_results_summary_counters"]),
-            ("Panel 5: Report Export", ["test_TC_01_verify_report_panel_navigation", "test_TC_02_verify_view_report_button", "test_TC_03_verify_download_html_report_trigger", "test_TC_04_verify_download_dut_data_trigger"]),
-            ("Panel 6: Configure & Channels", ["test_TC_01_verify_configure_panel_navigation", "test_TC_02_verify_controller_mode_selection", "test_TC_03_verify_channel_toggles", "test_TC_04_verify_apply_configuration"]),
-            ("Panel 7: LoopBack Test", ["test_TC_01_verify_loopback_panel_navigation", "test_TC_02_verify_start_and_stop_loopback"]),
-            ("Panel 8: Help & Diagnostics", ["test_TC_01_verify_help_panel_navigation", "test_TC_02_verify_debug_log_download_trigger", "test_TC_03_verify_diagnostics_information_visible"]),
-        ]
-        for p_name, tcs in panels:
-            p_item = QTreeWidgetItem([p_name, "Ready"])
-            p_item.setCheckState(0, Qt.CheckState.Checked)
-            for tc in tcs:
-                tc_item = QTreeWidgetItem([tc, "Ready"])
-                tc_item.setCheckState(0, Qt.CheckState.Checked)
-                p_item.addChild(tc_item)
-            self.tree.addTopLevelItem(p_item)
+        total = 0
+        for suite, tests in discover_tests().items():
+            suite_item = QTreeWidgetItem([suite, ""])
+            suite_item.setFlags(suite_item.flags() | Qt.ItemFlag.ItemIsAutoTristate | Qt.ItemFlag.ItemIsUserCheckable)
+            for node_id, name, markers in tests:
+                item = QTreeWidgetItem([name, ", ".join(sorted(markers))])
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(0, Qt.CheckState.Checked)
+                item.setData(0, Qt.ItemDataRole.UserRole, (node_id, markers))
+                suite_item.addChild(item)
+                total += 1
+            self.tree.addTopLevelItem(suite_item)
         self.tree.expandAll()
+        self.test_count_lbl.setText(f"Showing {total} tests")
+
+    def _test_items(self):
+        for i in range(self.tree.topLevelItemCount()):
+            suite = self.tree.topLevelItem(i)
+            for j in range(suite.childCount()):
+                yield suite.child(j)
+
+    def selected_node_ids(self) -> list[str]:
+        return [item.data(0, Qt.ItemDataRole.UserRole)[0] for item in self._test_items()
+                if item.checkState(0) == Qt.CheckState.Checked]
 
     def select_smoke_preset(self):
-        for i in range(self.tree.topLevelItemCount()):
-            item = self.tree.topLevelItem(i)
-            is_smoke = "Connection" in item.text(0) or "Help" in item.text(0)
-            item.setCheckState(0, Qt.CheckState.Checked if is_smoke else Qt.CheckState.Unchecked)
+        for item in self._test_items():
+            smoke = "smoke" in item.data(0, Qt.ItemDataRole.UserRole)[1]
+            item.setCheckState(0, Qt.CheckState.Checked if smoke else Qt.CheckState.Unchecked)
 
     def select_full_preset(self):
-        for i in range(self.tree.topLevelItemCount()):
-            self.tree.topLevelItem(i).setCheckState(0, Qt.CheckState.Checked)
+        for item in self._test_items():
+            item.setCheckState(0, Qt.CheckState.Checked)
 
     def clear_selection(self):
-        for i in range(self.tree.topLevelItemCount()):
-            self.tree.topLevelItem(i).setCheckState(0, Qt.CheckState.Unchecked)
+        for item in self._test_items():
+            item.setCheckState(0, Qt.CheckState.Unchecked)
 
     def filter_tests(self, text):
         text = text.lower()
@@ -264,14 +283,46 @@ class MainWindow(QMainWindow):
             from Scripts.Helpers.api_client import c2_api
             if c2_api.is_online():
                 ver = c2_api.get_software_version()
-                state = c2_api.get_app_state()
-                conn = state.get("connectionState", "DISCONNECTED")
+                conn = c2_api.get_connection_info().get("testerStatus", "unknown")
                 self.backend_status_lbl.setText(f"🟢 C2 Online (v{ver}) | {conn}")
                 self.backend_status_lbl.setStyleSheet("background-color: #064e3b; color: #34d399; border: 1px solid #059669; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 11px;")
             else:
-                self.backend_status_lbl.setText("🔴 C2 Offline (Sim Available)")
+                self.backend_status_lbl.setText("🔴 C2 Offline")
                 self.backend_status_lbl.setStyleSheet("background-color: #450a0a; color: #f87171; border: 1px solid #dc2626; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 11px;")
         except Exception:
             self.backend_status_lbl.setText("⚪ C2 Offline")
             self.backend_status_lbl.setStyleSheet("background-color: #1e2433; color: #94a3b8; border: 1px solid #334155; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 11px;")
 
+
+
+TEST_DIR = Path(__file__).resolve().parent.parent / "TestCases"
+
+
+def _marker_names(decorators: list[ast.expr]) -> set[str]:
+    names = set()
+    for dec in decorators:
+        node = dec.func if isinstance(dec, ast.Call) else dec
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Attribute) and node.value.attr == "mark":
+            names.add(node.attr)
+    return names - {"parametrize", "xfail", "skip", "skipif"}
+
+
+def discover_tests() -> dict[str, list[tuple[str, str, set[str]]]]:
+    """{suite file: [(pytest node id, test name, markers)]} without importing the test modules."""
+    suites: dict[str, list[tuple[str, str, set[str]]]] = {}
+    for path in sorted(TEST_DIR.glob("test_*.py")):
+        rel = f"Scripts/TestCases/{path.name}"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        tests = []
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
+                cls_markers = _marker_names(node.decorator_list)
+                for fn in node.body:
+                    if isinstance(fn, ast.FunctionDef) and fn.name.startswith("test_"):
+                        tests.append((f"{rel}::{node.name}::{fn.name}", fn.name,
+                                      cls_markers | _marker_names(fn.decorator_list)))
+            elif isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
+                tests.append((f"{rel}::{node.name}", node.name, _marker_names(node.decorator_list)))
+        if tests:
+            suites[path.name] = tests
+    return suites

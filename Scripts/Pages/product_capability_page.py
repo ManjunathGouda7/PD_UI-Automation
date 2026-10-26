@@ -1,48 +1,56 @@
 """
-Page Object Model for Product Capability Panel.
+Page Object Model for the Product Capability panel.
 """
+from __future__ import annotations
+
 from playwright.sync_api import Page
-from Scripts.Pages.base_page import BasePage
-from Scripts.Helpers.Locators import NavigationLocators, ProductCapLocators
+
+from Scripts.Helpers.Locators import ProductCapLocators
 from Scripts.Helpers.logger import logger
+from Scripts.Pages.base_page import BasePage
 
 
 class ProductCapabilityPage(BasePage):
+    PANEL_NAME = "Product Capability"
+
     def __init__(self, page: Page):
         super().__init__(page)
 
-    def open_panel(self) -> None:
-        self.switch_tab(NavigationLocators.TAB_PRODUCT_CAP)
+    # DUT type ------------------------------------------------------------
 
-    def select_dut_role(self, role: str = "Provider Only") -> None:
-        logger.info(f"Selecting DUT Role: {role}")
-        dut_el = self.page.locator(ProductCapLocators.DUT_TYPE_DROPDOWN).first
-        if dut_el.is_visible():
-            try:
-                dut_el.select_option(label=role)
-            except Exception:
-                dut_el.click()
+    def dut_type(self) -> str:
+        return self.dropdown_value(ProductCapLocators.DUT_TYPE_DROPDOWN)
 
-    def select_cable_model(self, cable: str = "GRL-SPL EPR Cable 1") -> None:
-        logger.info(f"Selecting Cable Model: {cable}")
-        cable_el = self.page.locator(ProductCapLocators.CABLE_SELECT).first
-        if cable_el.is_visible():
-            try:
-                cable_el.select_option(label=cable)
-            except Exception:
-                pass
+    def dut_type_options(self) -> list[str]:
+        return self.dropdown_options(ProductCapLocators.DUT_TYPE_DROPDOWN)
 
-    def read_device(self) -> bool:
-        logger.info("Triggering Read Device data...")
-        if self.is_visible(ProductCapLocators.READ_DEVICE_BTN):
-            self.click(ProductCapLocators.READ_DEVICE_BTN)
-            self.page.wait_for_timeout(1500)
-            return True
-        return False
+    def select_dut_type(self, dut_type: str) -> None:
+        self.select_dropdown(ProductCapLocators.DUT_TYPE_DROPDOWN, dut_type)
 
-    def clear_vif(self) -> bool:
-        logger.info("Clearing VIF...")
-        if self.is_visible(ProductCapLocators.CLEAR_VIF_BTN):
-            self.click(ProductCapLocators.CLEAR_VIF_BTN)
-            return True
-        return False
+    # Cable -----------------------------------------------------------------
+
+    def cable(self) -> str:
+        return self.dropdown_value(ProductCapLocators.CABLE_DROPDOWN)
+
+    def cable_options(self) -> list[str]:
+        return self.dropdown_options(ProductCapLocators.CABLE_DROPDOWN)
+
+    def select_cable(self, cable: str) -> None:
+        self.select_dropdown(ProductCapLocators.CABLE_DROPDOWN, cable)
+
+    # Project / VIF -----------------------------------------------------------
+
+    def project_save_enabled(self) -> bool:
+        return self.is_enabled(ProductCapLocators.PROJECT_SAVE_BTN)
+
+    def type_project_name(self, name: str) -> None:
+        self.fill(ProductCapLocators.PROJECT_NAME_INPUT, name)
+
+    def vif_generator_href(self) -> str:
+        return self.el(ProductCapLocators.VIF_GENERATOR_LINK).get_attribute("href") or ""
+
+    # Hardware actions ----------------------------------------------------------
+
+    def read_device_data(self) -> None:
+        logger.info("Reading device data from DUT...")
+        self.click(ProductCapLocators.READ_DEVICE_BTN)

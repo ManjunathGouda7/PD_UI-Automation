@@ -1,12 +1,13 @@
-playwright>=1.42.0
-pytest>=8.0.0
-pytest-playwright>=0.4.4
-pytest-xdist>=3.5.0
-pytest-rerunfailures>=14.0
-allure-pytest>=2.13.5
-PyQt6>=6.6.0
-openpyxl>=3.1.2
-python-dotenv>=1.0.0
-orjson>=3.9.0
-requests>=2.31.0
-ruff>=0.6.0
+# Pinned for reproducible runs. Keep `playwright` in sync with the Docker base image tag.
+playwright==1.62.0
+pytest==9.0.2
+pytest-xdist==3.8.0
+pytest-rerunfailures==16.1
+pytest-timeout==2.4.0
+allure-pytest==2.15.0
+PyQt6==6.10.0
+openpyxl==3.1.5
+python-dotenv==1.1.1
+orjson==3.11.3
+requests==2.34.2
+ruff==0.16.6

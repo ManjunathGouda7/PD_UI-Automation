@@ -6,7 +6,10 @@ running at http://localhost:5003/swagger/index.html.
 from __future__ import annotations
 
 from typing import Any
+
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from Scripts.Helpers.config import Config
 from Scripts.Helpers.logger import logger
@@ -29,6 +32,14 @@ class C2ApiClient:
         self.base_url = (base_url or Config.api_host()).rstrip("/")
         self.timeout = timeout
         self.session = requests.Session()
+        # Retry transient connection errors / 5xx on idempotent reads only; commands are never replayed.
+        retry = Retry(
+            total=2, connect=2, read=1, backoff_factor=0.5,
+            status_forcelist=(502, 503, 504), allowed_methods=frozenset({"GET"}),
+            raise_on_status=False,
+        )
+        self.session.mount("http://", HTTPAdapter(max_retries=retry))
+        self.session.mount("https://", HTTPAdapter(max_retries=retry))
         self.session.headers.update({
             "User-Agent": "GRL-PD-Automation-Client/1.0",
             "Accept": "application/json, text/plain, */*",
@@ -43,20 +54,22 @@ class C2ApiClient:
         kwargs.setdefault("timeout", self.timeout)
         try:
             response = self.session.request(method=method, url=url, **kwargs)
-            response.raise_for_status()
-            
-            content_type = response.headers.get("Content-Type", "")
-            if "application/json" in content_type:
-                return response.json()
-            return response.text
-        except requests.exceptions.HTTPError as e:
-            msg = f"API request {method} {url} failed with status {response.status_code}: {response.text}"
-            logger.error(msg)
-            raise C2ApiError(msg, status_code=response.status_code, response_text=response.text) from e
         except requests.exceptions.RequestException as e:
             msg = f"API connection error for {method} {url}: {e}"
             logger.error(msg)
             raise C2ApiError(msg) from e
+
+        if not response.ok:
+            msg = f"API request {method} {url} failed with status {response.status_code}: {response.text[:500]}"
+            logger.error(msg)
+            raise C2ApiError(msg, status_code=response.status_code, response_text=response.text)
+
+        if "application/json" in response.headers.get("Content-Type", ""):
+            try:
+                return response.json()
+            except ValueError:
+                return response.text
+        return response.text
 
     # -------------------------------------------------------------------------
     # Health & System APIs (/api/App)
@@ -73,10 +86,11 @@ class C2ApiClient:
     def get_swagger_spec(self) -> dict[str, Any] | None:
         """Fetch the full OpenAPI specification."""
         try:
-            return self._request("GET", "swagger/v0.1/swagger.json")
-        except Exception as e:
+            data = self._request("GET", "swagger/v0.1/swagger.json")
+        except C2ApiError as e:
             logger.warning(f"Could not fetch Swagger JSON: {e}")
             return None
+        return data if isinstance(data, dict) else None
 
     def get_software_version(self) -> str:
         """Returns GRL software version (e.g. '1.1.1.1')."""
@@ -116,12 +130,20 @@ class C2ApiClient:
         return self._request("PUT", f"api/App/PutDisablePopUpStatus/{str(disable).lower()}")
 
     def put_message_box_response(self, reply: str) -> Any:
-        """Respond to application prompt or modal dialog."""
-        return self._request("PUT", "api/App/PutMessageBoxResponse", params={"reply": reply})
+        """Respond to application prompt or modal dialog (reply is sent as the JSON body)."""
+        return self._request("PUT", "api/App/PutMessageBoxResponse", json=reply)
 
     # -------------------------------------------------------------------------
     # Connection Setup APIs (/api/ConnectionSetup)
     # -------------------------------------------------------------------------
+
+    def get_connection_info(self) -> dict[str, Any]:
+        """
+        Read-only tester details backing the Connection Setup panel: testerStatus, serialNumber,
+        firmwareVersion, testerIpAddress, calibration dates, boardCalibration, licenseInfo, ...
+        """
+        data = self._request("GET", "api/ConnectionSetup")
+        return data if isinstance(data, dict) else {}
 
     def get_ip_history(self) -> list[dict[str, Any]]:
         """Returns list of recently used IP addresses and active states."""
@@ -150,7 +172,7 @@ class C2ApiClient:
     # -------------------------------------------------------------------------
 
     def get_connection_status(self) -> int:
-        """Returns 0 for disconnected, 1 for connected."""
+        """C2 scripting-API link status (0/1). Not the UI tester status - see is_tester_connected()."""
         val = self._request("GET", "api/C2Api/GetConnectionStatus")
         try:
             return int(str(val).strip('"').strip())
@@ -200,13 +222,34 @@ class C2ApiClient:
         """Get capture status."""
         return self._request("GET", "api/C2Api/GetCaptureStatus")
 
-    def set_vbus_voltage(self, voltage_volts: float) -> Any:
-        """Set VBUS voltage output."""
-        return self._request("GET", "api/C2Api/SetVbusVoltage", params={"vbusVoltage": voltage_volts})
+    def set_vbus_voltage(self, voltage_volts: float, current_limit_amps: float, port: str = "ONE") -> Any:
+        """Set VBUS source voltage with a current limit (drives tester hardware). port: ONE..FOUR."""
+        return self._request(
+            "GET",
+            "api/C2Api/SetVbusVoltage",
+            params={"voltageInVolt": voltage_volts, "currentLimitInAmps": current_limit_amps, "port": port},
+        )
 
-    def set_eload_current(self, current_amps: float) -> Any:
-        """Set Eload current load."""
-        return self._request("GET", "api/C2Api/SetEloadCurrent", params={"eloadCurrent": current_amps})
+    def set_eload_current(
+        self,
+        voltage_volts: float,
+        max_current_amps: float,
+        state: str = "ON",
+        channel: str = "VBUS",
+        port: str = "ONE",
+    ) -> Any:
+        """Configure the E-Load (drives tester hardware). state: ON/OFF, channel: VBUS/VCONN, port: ONE..FOUR."""
+        return self._request(
+            "GET",
+            "api/C2Api/SetEloadCurrent",
+            params={
+                "voltageInVolts": voltage_volts,
+                "maxCurrentInAmps": max_current_amps,
+                "state": state,
+                "channel": channel,
+                "port": port,
+            },
+        )
 
     # -------------------------------------------------------------------------
     # Test Configuration APIs (/api/TestConfiguration)
@@ -233,9 +276,27 @@ class C2ApiClient:
         logger.info("Stopping test execution via API...")
         return self._request("GET", "api/TestConfiguration/StopTestExecution")
 
-    def get_certification_filter(self) -> Any:
-        """Get active certification filters."""
-        return self._request("GET", "api/TestConfiguration/GetCertificationFilter")
+    def get_certification_filter(self) -> str:
+        """Get the active certification filter name (e.g. 'All Supported Certifications')."""
+        return str(self._request("GET", "api/TestConfiguration/GetCertificationFilter")).strip('"').strip()
+
+    def count_test_cases(self) -> int:
+        """Number of leaf test cases in the GetTestCaseList tree."""
+        def leaves(node: dict[str, Any]) -> int:
+            children = node.get("children") or []
+            return 1 if not children else sum(leaves(c) for c in children)
+        return sum(leaves(n) for n in self.get_test_case_list())
+
+    def is_tester_connected(self) -> bool:
+        """
+        True when the app is connected to a tester - the 'Tester Status' the UI shows.
+        Source: GET /api/ConnectionSetup testerStatus. (/api/C2Api/GetConnectionStatus reports the
+        separate C2 scripting-API link and stays 0 while the UI is connected.)
+        """
+        try:
+            return self.get_connection_info().get("testerStatus") == "Connected"
+        except C2ApiError:
+            return False
 
     def put_certification_filter(self, certification: str) -> Any:
         """Set active certification filter."""
@@ -269,8 +330,12 @@ class C2ApiClient:
     def get_report_file(self) -> bytes:
         """Download generated report file."""
         url = self._url("api/ReportsGeneration/GetReportFile")
-        res = self.session.get(url, timeout=self.timeout)
-        res.raise_for_status()
+        try:
+            res = self.session.get(url, timeout=self.timeout)
+        except requests.exceptions.RequestException as e:
+            raise C2ApiError(f"API connection error for GET {url}: {e}") from e
+        if not res.ok:
+            raise C2ApiError(f"GET {url} failed with status {res.status_code}", res.status_code, res.text)
         return res.content
 
     def get_report_file_name(self) -> str:
@@ -289,6 +354,15 @@ class C2ApiClient:
     def post_current_test_report(self) -> Any:
         """Trigger generation of current test run report."""
         return self._request("POST", "api/ReportsGeneration/PostCurrentTestReport")
+
+    # -------------------------------------------------------------------------
+    # Product Capability APIs (/api/ProductCapability)
+    # -------------------------------------------------------------------------
+
+    def get_port_configurations(self) -> dict[str, Any]:
+        """VIF file name, execution mode and per-port DUT type / cable (PortA == UI 'Port1')."""
+        data = self._request("GET", "api/ProductCapability/GetPortConfigurations")
+        return data if isinstance(data, dict) else {}
 
     # -------------------------------------------------------------------------
     # Config Control APIs (/api/ConfigControl)

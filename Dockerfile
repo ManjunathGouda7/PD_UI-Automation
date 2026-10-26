@@ -1,16 +1,19 @@
-FROM mcr.microsoft.com/playwright/python:v1.42.0-jammy
+# Image tag must match the `playwright` version pinned in requirements.txt.
+FROM mcr.microsoft.com/playwright/python:v1.62.0-noble
 
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
     HEADLESS=true \
     APP_ENV=ci
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt && \
-    playwright install chromium
+# Browsers are preinstalled in the base image; PyQt6 (desktop GUI) is not needed in CI.
+RUN grep -v '^PyQt6' requirements.txt > /tmp/req.txt && \
+    pip install --no-cache-dir -r /tmp/req.txt
 
 COPY . .
 
-CMD ["pytest", "-c", "Configurations/pytest.ini", "Scripts/TestCases", "--alluredir=allure-results"]
+# Read-only smoke by default; override CMD for other profiles (see README).
+CMD ["python", "run.py", "--mode", "smoke", "--allure"]

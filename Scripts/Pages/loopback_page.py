@@ -1,37 +1,50 @@
 """
-Page Object Model for LoopBack Panel.
+Page Object Model for the LoopBack panel.
 """
+from __future__ import annotations
+
 from playwright.sync_api import Page
+
+from Scripts.Helpers.Locators import LoopBackLocators
 from Scripts.Pages.base_page import BasePage
-from Scripts.Helpers.Locators import NavigationLocators, LoopBackLocators
-from Scripts.Helpers.logger import logger
 
 
 class LoopBackPage(BasePage):
+    PANEL_NAME = "LoopBack"
+
     def __init__(self, page: Page):
         super().__init__(page)
 
-    def open_panel(self) -> None:
-        self.switch_tab(NavigationLocators.TAB_LOOPBACK)
+    def data(self) -> dict[str, str]:
+        """{'Transferred Data': '0 MB', ..., 'Status': '...'} (labels without trailing colon)."""
+        items = self.panel.locator(LoopBackLocators.DATA_ITEM)
+        result = {}
+        for i in range(items.count()):
+            item = items.nth(i)
+            label = item.locator(LoopBackLocators.DATA_LABEL).inner_text().strip().rstrip(":")
+            result[label] = " ".join(item.locator(LoopBackLocators.DATA_VALUE).inner_text().split())
+        return result
 
-    def select_device(self, device_name: str) -> None:
-        dev_el = self.page.locator(LoopBackLocators.DEVICE_SELECT).first
-        if dev_el.is_visible():
-            try:
-                dev_el.select_option(label=device_name)
-            except Exception:
-                pass
+    def device_options(self) -> list[str]:
+        return [o.strip() for o in self.el(LoopBackLocators.DEVICE_SELECT).locator("option").all_inner_texts()]
 
-    def start_loopback(self) -> bool:
-        logger.info("Starting LoopBack test...")
-        if self.is_visible(LoopBackLocators.START_LOOPBACK_BTN):
-            self.click(LoopBackLocators.START_LOOPBACK_BTN)
-            return True
-        return False
+    def selected_device(self) -> str:
+        return self.value(LoopBackLocators.DEVICE_SELECT)
 
-    def stop_loopback(self) -> bool:
-        logger.info("Stopping LoopBack test...")
-        if self.is_visible(LoopBackLocators.STOP_LOOPBACK_BTN):
-            self.click(LoopBackLocators.STOP_LOOPBACK_BTN)
-            return True
-        return False
+    def start_enabled(self) -> bool:
+        return self.is_enabled(LoopBackLocators.START_BTN)
+
+    def stop_enabled(self) -> bool:
+        return self.is_enabled(LoopBackLocators.STOP_BTN)
+
+    def refresh_devices(self) -> None:
+        self.click(LoopBackLocators.REFRESH_BTN)
+
+    def select_device(self, label: str) -> None:
+        self.el(LoopBackLocators.DEVICE_SELECT).select_option(label=label, timeout=self.timeout)
+
+    def start(self) -> None:
+        self.click(LoopBackLocators.START_BTN)
+
+    def stop(self) -> None:
+        self.click(LoopBackLocators.STOP_BTN)

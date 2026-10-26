@@ -1,6 +1,6 @@
 """
-Desktop Application Entrypoint for GRL USB PD C2 UI Automation.
-Features real-time Pytest results collection, live logging, and dynamic report generation.
+Desktop entry point for GRL USB PD C2 UI Automation.
+Runs the selected tests in a worker thread, streams results live, and writes HTML/Excel reports.
 """
 from datetime import datetime
 import os
@@ -8,7 +8,6 @@ from pathlib import Path
 import sys
 import time
 
-# Ensure root is in sys.path
 ROOT_DIR = Path(__file__).resolve().parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
@@ -17,126 +16,106 @@ from PyQt6.QtCore import QThread, pyqtSignal  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 import pytest  # noqa: E402
 
+from Scripts.Helpers.config import Config  # noqa: E402
+from Scripts.UI.app import MainWindow  # noqa: E402
 from Scripts.UI.Excel_Report import generate_excel_report  # noqa: E402
 from Scripts.UI.HTML_Report import generate_html_report  # noqa: E402
-from Scripts.UI.app import MainWindow  # noqa: E402
 
 
 class PytestExecutionCollector:
-    """
-    Pytest plugin hook that intercepts real test outcomes during execution.
-    """
+    """Pytest plugin that records the real outcome of every test (setup, call and teardown)."""
 
     def __init__(self, log_callback=None):
-        self.test_cases = []
+        self.results: dict[str, dict] = {}
         self.start_time = None
         self.end_time = None
-        self.passed = 0
-        self.failed = 0
-        self.skipped = 0
         self.log_callback = log_callback
+
+    def _log(self, msg: str) -> None:
+        if self.log_callback:
+            self.log_callback(msg)
 
     def pytest_sessionstart(self, session):
         self.start_time = time.time()
 
     def pytest_runtest_logreport(self, report):
-        if report.when == "call":
-            duration = f"{report.duration:.2f}s"
-            status = "PASSED" if report.passed else ("FAILED" if report.failed else "SKIPPED")
-            remarks = "Test passed"
-            if report.failed:
-                self.failed += 1
-                remarks = str(report.longrepr).splitlines()[-1] if report.longrepr else "Assertion Error"
-                if self.log_callback:
-                    self.log_callback(f"[FAIL] {report.nodeid} ({duration}) - {remarks}")
-            elif report.passed:
-                self.passed += 1
-                remarks = "Test passed successfully"
-                if self.log_callback:
-                    self.log_callback(f"[PASS] {report.nodeid} ({duration})")
-            else:
-                self.skipped += 1
-                remarks = "Test skipped"
-                if self.log_callback:
-                    self.log_callback(f"[SKIP] {report.nodeid}")
+        entry = self.results.setdefault(report.nodeid, {
+            "TC_ID": report.nodeid, "TC_Result": "PASSED", "duration": 0.0, "TC_Remarks": "",
+        })
+        entry["duration"] += report.duration
 
-            self.test_cases.append({
-                "TC_ID": report.nodeid,
-                "TC_Result": status,
-                "TC_Execution_Duration": duration,
-                "TC_Remarks": remarks,
-            })
-        elif report.when == "setup" and report.failed:
-            self.failed += 1
-            duration = f"{report.duration:.2f}s"
-            remarks = str(report.longrepr).splitlines()[-1] if report.longrepr else "Fixture setup failed"
-            if self.log_callback:
-                self.log_callback(f"[ERROR] {report.nodeid} (Setup Failed) - {remarks}")
-            self.test_cases.append({
-                "TC_ID": report.nodeid,
-                "TC_Result": "FAILED (Setup)",
-                "TC_Execution_Duration": duration,
-                "TC_Remarks": remarks,
-            })
+        if report.skipped:
+            xfail = hasattr(report, "wasxfail")
+            entry["TC_Result"] = "XFAIL" if xfail else "SKIPPED"
+            if xfail:
+                entry["TC_Remarks"] = report.wasxfail
+            elif isinstance(report.longrepr, tuple):
+                entry["TC_Remarks"] = str(report.longrepr[2])
+            self._log(f"[{entry['TC_Result']}] {report.nodeid} - {entry['TC_Remarks']}")
+        elif report.failed:
+            phase = "" if report.when == "call" else f" ({report.when})"
+            entry["TC_Result"] = "FAILED" if report.when == "call" else "ERROR"
+            entry["TC_Remarks"] = (str(report.longrepr).splitlines() or ["failed"])[-1] + phase
+            self._log(f"[{entry['TC_Result']}] {report.nodeid} - {entry['TC_Remarks']}")
+        elif report.when == "call":
+            self._log(f"[PASS] {report.nodeid} ({report.duration:.2f}s)")
 
     def pytest_sessionfinish(self, session, exitstatus):
         self.end_time = time.time()
 
-    def get_report_data(self, report_name="USB_PD_C2_Run", dut_ip="192.168.102.76"):
-        total_seconds = int(self.end_time - self.start_time) if (self.start_time and self.end_time) else 0
-        mins, secs = divmod(total_seconds, 60)
-        hours, mins = divmod(mins, 60)
-        total_time_str = f"{hours:02d}:{mins:02d}:{secs:02d}"
+    def counts(self) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for r in self.results.values():
+            out[r["TC_Result"]] = out.get(r["TC_Result"], 0) + 1
+        return out
 
-        total_tests = len(self.test_cases)
+    def get_report_data(self, report_name: str, dut_ip: str) -> dict:
+        total_seconds = int((self.end_time or 0) - (self.start_time or 0))
+        hours, rem = divmod(total_seconds, 3600)
+        mins, secs = divmod(rem, 60)
+        counts = self.counts()
+        cases = [{**r, "TC_Execution_Duration": f"{r['duration']:.2f}s"} for r in self.results.values()]
         return {
             "Report Name": report_name,
             "DUT_IP": dut_ip,
-            "Total Tests": total_tests,
-            "Passed": self.passed,
-            "Failed": self.failed,
-            "Total Time": total_time_str,
-            "Test Cases": self.test_cases if self.test_cases else [
-                {"TC_ID": "No_Tests_Executed", "TC_Result": "SKIPPED", "TC_Execution_Duration": "0.0s", "TC_Remarks": "No test items collected"}
-            ],
+            "Total Tests": len(cases),
+            "Passed": counts.get("PASSED", 0),
+            "Failed": counts.get("FAILED", 0) + counts.get("ERROR", 0),
+            "Skipped": counts.get("SKIPPED", 0) + counts.get("XFAIL", 0),
+            "Total Time": f"{hours:02d}:{mins:02d}:{secs:02d}",
+            "Test Cases": cases,
         }
 
 
 class TestRunnerThread(QThread):
+    __test__ = False
     log_signal = pyqtSignal(str)
     progress_signal = pyqtSignal(int)
     finished_signal = pyqtSignal()
 
-    def __init__(self, test_args, dut_ip="192.168.102.76"):
+    def __init__(self, test_args: list[str], dut_ip: str):
         super().__init__()
         self.test_args = test_args
         self.dut_ip = dut_ip
 
     def run(self):
-        self.log_signal.emit("[INFO] Launching pytest with arguments: " + " ".join(self.test_args))
+        self.log_signal.emit("[INFO] pytest " + " ".join(self.test_args))
         collector = PytestExecutionCollector(log_callback=self.log_signal.emit)
-
         exit_code = pytest.main(self.test_args, plugins=[collector])
-        self.log_signal.emit(f"[INFO] Pytest completed with exit code: {exit_code}")
+        self.log_signal.emit(f"[INFO] pytest finished with exit code {int(exit_code)}: {collector.counts()}")
         self.progress_signal.emit(90)
 
-        # Generate Real Dynamic Reports
         reports_dir = ROOT_DIR / "Reports"
         reports_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        html_out = reports_dir / f"PD_Report_{ts}.html"
-        excel_out = reports_dir / f"PD_Report_{ts}.xlsx"
-
-        report_data = collector.get_report_data(
-            report_name=f"USB_PD_C2_Run_{ts}",
-            dut_ip=self.dut_ip,
-        )
-
+        report_data = collector.get_report_data(report_name=f"USB_PD_C2_Run_{ts}", dut_ip=self.dut_ip)
         try:
+            html_out = reports_dir / f"PD_Report_{ts}.html"
+            excel_out = reports_dir / f"PD_Report_{ts}.xlsx"
             generate_html_report(report_data, str(html_out))
             generate_excel_report(report_data, str(excel_out))
-            self.log_signal.emit(f"[SUCCESS] Real-time HTML report: {html_out}")
-            self.log_signal.emit(f"[SUCCESS] Real-time Excel report: {excel_out}")
+            self.log_signal.emit(f"[SUCCESS] HTML report: {html_out}")
+            self.log_signal.emit(f"[SUCCESS] Excel report: {excel_out}")
         except Exception as e:
             self.log_signal.emit(f"[WARNING] Report generation failed: {e}")
 
@@ -150,18 +129,21 @@ class GUIController:
         self.runner = None
 
     def start_execution(self):
-        workers = self.window.workers_combo.currentText()
-        retries = self.window.retries_combo.currentText()
-        is_headless = self.window.headless_chk.isChecked()
-        dut_ip = self.window.ip_input.text().strip()
+        node_ids = self.window.selected_node_ids()
+        if not node_ids:
+            self.window.log_view.append("[WARN] No tests selected.")
+            return
 
-        os.environ["HEADLESS"] = "true" if is_headless else "false"
+        os.environ["HEADLESS"] = "true" if self.window.headless_chk.isChecked() else "false"
+        dut_ip = self.window.ip_input.text().strip() or Config.dut_ip()
+        os.environ["DUT_IP"] = dut_ip
 
-        args = ["-c", "Configurations/pytest.ini", "Scripts/TestCases"]
-        if int(workers) > 1:
-            args.extend(["-n", workers, "--dist=loadfile"])
-        if int(retries) > 0:
-            args.extend(["--reruns", retries, "--reruns-delay", "2"])
+        args = [*node_ids, "-p", "no:cacheprovider"]
+        retries = int(self.window.retries_combo.currentText())
+        if retries > 0:
+            args.extend(["--reruns", str(retries), "--reruns-delay", "3"])
+        if self.window.hw_actions_chk.isChecked():
+            args.append("--allow-hw-actions")
 
         self.runner = TestRunnerThread(args, dut_ip=dut_ip)
         self.runner.log_signal.connect(self.window.log_view.append)
@@ -174,10 +156,10 @@ class GUIController:
 
 
 def main():
+    os.chdir(ROOT_DIR)
     app = QApplication(sys.argv)
     window = MainWindow()
-    controller = GUIController(window)
-    window.controller = controller
+    window.controller = GUIController(window)
     window.show()
     sys.exit(app.exec())
 

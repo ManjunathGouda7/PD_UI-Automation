@@ -1,20 +1,39 @@
 """
-Test cases for Panel 7: LoopBack.
+Panel 7: LoopBack.
+Spec: LoopBack.
 """
-import pytest
+import re
+
 from playwright.sync_api import Page
+import pytest
+
+from Scripts.Data.test_data_manager import test_data_manager
 from Scripts.Pages.loopback_page import LoopBackPage
+
+LB = test_data_manager.section("loopback")
+
+
+@pytest.fixture
+def lb(page: Page) -> LoopBackPage:
+    return LoopBackPage(page).open()
 
 
 @pytest.mark.loopback
-@pytest.mark.regression
 class TestLoopBackPanel:
-    def test_TC_01_verify_loopback_panel_navigation(self, page: Page):
-        lb_page = LoopBackPage(page)
-        lb_page.open_panel()
+    @pytest.mark.smoke
+    def test_TC_01_data_fields_present_with_units(self, lb: LoopBackPage):
+        data = lb.data()
+        assert list(data) == LB["data_labels"]
+        assert re.fullmatch(r"[\d.]+ MB", data["Transferred Data"]), data
+        assert re.fullmatch(r"[\d.]+ MB", data["Received Data"]), data
+        assert re.fullmatch(r"[\d.]+ Mbps", data["Effective Throughput"]), data
+        assert data["Status"], "LoopBack status is empty"
 
-    def test_TC_02_verify_start_and_stop_loopback(self, page: Page):
-        lb_page = LoopBackPage(page)
-        lb_page.open_panel()
-        lb_page.start_loopback()
-        lb_page.stop_loopback()
+    def test_TC_02_start_stop_disabled_without_device(self, lb: LoopBackPage):
+        if lb.selected_device():
+            pytest.skip("A loopback device is selected")
+        assert not lb.start_enabled()
+        assert not lb.stop_enabled()
+
+    def test_TC_03_device_list_has_placeholder(self, lb: LoopBackPage):
+        assert lb.device_options()[0] == "Select a device..."
