@@ -6,10 +6,9 @@ Features: test tree discovered from the test files, presets, live search, retrie
 import ast
 from dataclasses import dataclass, field
 from pathlib import Path
-import re
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import Qt, QTimer, QUrl
+from PyQt6.QtGui import QColor, QDesktopServices
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -28,6 +27,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from Scripts.Helpers.reporting import humanize_test_name, short_name_from_title, suite_title
 
 DARK_STYLESHEET = """
 QMainWindow {
@@ -288,6 +289,12 @@ class MainWindow(QMainWindow):
         self.run_all_btn.setToolTip("Run every test of every panel")
         self.run_all_btn.clicked.connect(self.on_run_all_clicked)
         bottom_layout.addWidget(self.run_all_btn, 1)
+
+        self.open_report_btn = QPushButton("📂 Open Report")
+        self.open_report_btn.setToolTip("Open the report folder of the last run")
+        self.open_report_btn.setEnabled(False)
+        self.open_report_btn.clicked.connect(self.open_last_report)
+        bottom_layout.addWidget(self.open_report_btn)
         main_layout.addWidget(bottom_bar)
 
         self.show_panel(None)
@@ -439,6 +446,16 @@ class MainWindow(QMainWindow):
         if self.controller:
             self.controller.start_execution(self.all_node_ids())
 
+    def set_last_report_dir(self, folder: str) -> None:
+        self.last_report_dir = folder
+        self.open_report_btn.setEnabled(True)
+        self.open_report_btn.setToolTip(folder)
+
+    def open_last_report(self) -> None:
+        folder = getattr(self, "last_report_dir", "")
+        if folder:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
+
     def set_running(self, running: bool) -> None:
         self.run_btn.setEnabled(not running)
         self.run_all_btn.setEnabled(not running)
@@ -479,12 +496,8 @@ class DiscoveredSuite:
 
     @property
     def short_name(self) -> str:
-        """Sidebar label: 'Panel 1: Connection Setup' -> 'Connection Setup', 'REST API: ...' -> 'REST API'."""
-        match = re.match(r"Panel \d+:\s*(.+)", self.title)
-        if match:
-            return match.group(1)
-        head = self.title.split(":", 1)[0].strip()
-        return head[:1].upper() + head[1:]
+        """Sidebar label - same name as the panel's report folder."""
+        return short_name_from_title(self.title)
 
 
 def _marker_names(decorators: list[ast.expr]) -> set[str]:
@@ -495,23 +508,6 @@ def _marker_names(decorators: list[ast.expr]) -> set[str]:
             names.add(node.attr)
     return names - {"parametrize", "xfail", "skip", "skipif"}
 
-
-def humanize_test_name(name: str) -> str:
-    """'test_TC_01_tester_info_table_has_all_fields' -> 'TC_01 · Tester info table has all fields'."""
-    body = name.removeprefix("test_")
-    match = re.match(r"(TC_\d+)_(.*)", body)
-    tc_id, words = (match.group(1), match.group(2)) if match else ("", body)
-    text = words.replace("_", " ").strip()
-    text = text[:1].upper() + text[1:]
-    for acronym in ("api", "ui", "ip", "dut", "vif", "html", "url"):
-        text = re.sub(rf"\b{acronym}\b", acronym.upper(), text, flags=re.IGNORECASE)
-    return f"{tc_id} · {text}" if tc_id else text
-
-
-def _suite_title(module: ast.Module, filename: str) -> str:
-    """First docstring line ('Panel 1: Connection Setup.'), else the file name."""
-    doc = (ast.get_docstring(module) or "").strip().splitlines()
-    return doc[0].rstrip(".") if doc else filename
 
 
 def _discovered_test(fn: ast.FunctionDef, prefix: str, inherited: set[str]) -> DiscoveredTest:
@@ -530,7 +526,7 @@ def discover_tests() -> list[DiscoveredSuite]:
     for path in sorted(TEST_DIR.glob("test_*.py")):
         rel = f"Scripts/TestCases/{path.name}"
         module = ast.parse(path.read_text(encoding="utf-8"))
-        suite = DiscoveredSuite(file=rel, title=_suite_title(module, path.name))
+        suite = DiscoveredSuite(file=rel, title=suite_title(str(path)))
         for node in module.body:
             if isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
                 cls_markers = _marker_names(node.decorator_list)

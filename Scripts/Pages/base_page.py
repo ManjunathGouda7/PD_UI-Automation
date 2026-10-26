@@ -13,11 +13,10 @@ import time
 
 from playwright.sync_api import Locator, Page, expect
 
+from Scripts.Helpers import reporting
 from Scripts.Helpers.config import Config
 from Scripts.Helpers.Locators import AppLocators, DropdownLocators, NavigationLocators
 from Scripts.Helpers.logger import logger
-
-REPORTS_DIR = Path(__file__).resolve().parent.parent.parent / "Reports"
 
 
 class BasePage:
@@ -148,8 +147,6 @@ class BasePage:
     # ------------------------------------------------------------------
 
     def take_screenshot(self, name: str) -> Path:
-        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-        safe = re.sub(r"[^\w.-]+", "_", name)
-        path = REPORTS_DIR / f"{safe}_{int(time.time())}.png"
+        path = reporting.run_dir() / f"{reporting.safe_name(name)}_{int(time.time())}.png"
         self.page.screenshot(path=str(path), full_page=False)
         return path

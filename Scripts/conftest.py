@@ -9,22 +9,20 @@ Run-mode switches (env var or CLI option):
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import re
 import time
 
 from playwright.sync_api import Browser, BrowserContext, Page, sync_playwright
 import pytest
 
+from Scripts.Helpers import reporting
 from Scripts.Helpers.api_client import C2ApiClient
 from Scripts.Helpers.config import Config
+from Scripts.Helpers.Locators import AppLocators
 from Scripts.Helpers.logger import logger
 from Scripts.Helpers.mock_server import start_mock_service, stop_mock_service
 from Scripts.Helpers.popups import PopupGuard
 from Scripts.Pages.app_page import AppPage
-
-REPORTS_DIR = Path(__file__).resolve().parent.parent / "Reports"
-REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 try:  # optional
     import allure
@@ -45,6 +43,7 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
+    reporting.register(config)
     if config.getoption("--mock"):
         os.environ["MOCK_SERVER"] = "true"
     if config.getoption("--allow-hw-actions"):
@@ -139,8 +138,69 @@ def _requires_tester(request, api_client: C2ApiClient):
 
 
 # ----------------------------------------------------------------------------
-# Browser
+# Browser - one window for the whole run
 # ----------------------------------------------------------------------------
+
+class BrowserSession:
+    """
+    A single browser, context and page shared by every UI test in the run, so the window
+    is not closed and reopened per test. Each test starts from a reset page (popups closed,
+    menus closed, app reloaded only if it is not healthy) and records its own trace chunk.
+    """
+
+    def __init__(self, browser: Browser):
+        self.context: BrowserContext = browser.new_context(viewport={"width": 1440, "height": 900},
+                                                           accept_downloads=True)
+        self.context.set_default_timeout(Config.ui_timeout_ms())
+        self.context.tracing.start(screenshots=True, snapshots=True, sources=True)
+        self.console_errors: list[str] = []
+        self.page: Page | None = None
+        self.guard: PopupGuard | None = None
+        self._open_page()
+
+    def _open_page(self) -> None:
+        pg = self.context.new_page()
+        pg.on("console", lambda m: self.console_errors.append(m.text) if m.type == "error" else None)
+        pg.on("pageerror", lambda e: self.console_errors.append(f"pageerror: {e}"))
+        pg.on("dialog", lambda d: (logger.warning(f"Native dialog dismissed: {d.message}"), d.dismiss()))
+        self.guard = PopupGuard(pg).install()
+        pg._c2_popup_guard = self.guard  # type: ignore[attr-defined]
+        self.page = pg
+        AppPage(pg).load()
+        self.guard.dismiss_informational()
+
+    def _healthy(self) -> bool:
+        pg = self.page
+        if pg is None or pg.is_closed():
+            return False
+        try:
+            return bool(re.search(r"/v[\d.]+\.html", pg.url)) and pg.locator("#left-toggle-group").is_visible()
+        except Exception:
+            return False
+
+    def reset_for_test(self) -> Page:
+        if self.page is None or self.page.is_closed():
+            logger.warning("Browser page was closed; opening a new one")
+            self._open_page()
+        pg = self.page
+        self.guard.dismiss_informational()
+        cancel = pg.locator(AppLocators.POPUP_CANCEL)
+        if cancel.count() and cancel.first.is_visible():  # a confirmation left open by a failed test
+            cancel.first.click()
+        pg.keyboard.press("Escape")  # close any open dropdown menu
+        if not self._healthy():
+            logger.warning("App not in a usable state; reloading it")
+            AppPage(pg).load()
+            self.guard.dismiss_informational()
+        return pg
+
+    def close(self) -> None:
+        try:
+            self.context.tracing.stop()
+        except Exception:
+            pass
+        self.context.close()
+
 
 @pytest.fixture(scope="session")
 def browser_instance():
@@ -150,13 +210,11 @@ def browser_instance():
         browser.close()
 
 
-@pytest.fixture
-def context(browser_instance: Browser) -> BrowserContext:
-    ctx = browser_instance.new_context(viewport={"width": 1440, "height": 900}, accept_downloads=True)
-    ctx.set_default_timeout(Config.ui_timeout_ms())
-    ctx.tracing.start(screenshots=True, snapshots=True, sources=True)
-    yield ctx
-    ctx.close()
+@pytest.fixture(scope="session")
+def browser_session(browser_instance: Browser) -> BrowserSession:
+    session = BrowserSession(browser_instance)
+    yield session
+    session.close()
 
 
 @pytest.fixture
@@ -165,23 +223,18 @@ def popup_guard(page: Page) -> PopupGuard:
 
 
 @pytest.fixture
-def page(context: BrowserContext, request) -> Page:
-    pg = context.new_page()
-    console_errors: list[str] = []
-    pg.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
-    pg.on("pageerror", lambda e: console_errors.append(f"pageerror: {e}"))
-    pg.on("dialog", lambda d: (logger.warning(f"Native dialog dismissed: {d.message}"), d.dismiss()))
-
-    guard = PopupGuard(pg).install()
-    pg._c2_popup_guard = guard  # type: ignore[attr-defined]
-
-    AppPage(pg).load()
-    guard.dismiss_informational()
+def page(browser_session: BrowserSession, request) -> Page:
+    pg = browser_session.reset_for_test()
+    guard = browser_session.guard
+    popups_before = len(guard.seen)
+    errors_before = len(browser_session.console_errors)
+    browser_session.context.tracing.start_chunk(title=request.node.nodeid)
 
     yield pg
 
-    for rec in guard.seen:
+    for rec in guard.seen[popups_before:]:
         request.node.user_properties.append(("app_popup", f"{rec.title}: {rec.message}"))
+    console_errors = browser_session.console_errors[errors_before:]
     if console_errors:
         logger.info(f"{len(console_errors)} browser console error(s) during {request.node.name}")
 
@@ -189,10 +242,10 @@ def page(context: BrowserContext, request) -> Page:
                  for w in ("setup", "call"))
     if failed:
         _log_backend_state(request)
-        _save_failure_artifacts(pg, context, request.node.name, console_errors)
+        _save_failure_artifacts(pg, browser_session.context, request.node, console_errors)
     else:
         try:
-            context.tracing.stop()
+            browser_session.context.tracing.stop_chunk()
         except Exception:
             pass
 
@@ -215,11 +268,11 @@ def _log_backend_state(request) -> None:
         logger.warning(f"Could not read backend state: {e}")
 
 
-def _save_failure_artifacts(pg: Page, ctx: BrowserContext, test_name: str, console_errors: list[str]) -> None:
-    safe = re.sub(r"[^\w.-]+", "_", test_name)
-    ts = int(time.time())
-    shot = REPORTS_DIR / f"fail_{safe}_{ts}.png"
-    trace = REPORTS_DIR / f"trace_{safe}_{ts}.zip"
+def _save_failure_artifacts(pg: Page, ctx: BrowserContext, node, console_errors: list[str]) -> None:
+    folder = reporting.panel_dir(node.path)
+    safe = reporting.safe_name(node.name)
+    shot = folder / f"fail_{safe}.png"
+    trace = folder / f"trace_{safe}.zip"
     try:
         pg.screenshot(path=str(shot), full_page=False)
         logger.info(f"Failure screenshot: {shot}")
@@ -228,7 +281,7 @@ def _save_failure_artifacts(pg: Page, ctx: BrowserContext, test_name: str, conso
     except Exception as e:
         logger.warning(f"Could not capture screenshot: {e}")
     try:
-        ctx.tracing.stop(path=str(trace))
+        ctx.tracing.stop_chunk(path=str(trace))
         logger.info(f"Playwright trace: {trace} (open with: playwright show-trace {trace})")
         if allure:
             allure.attach.file(str(trace), name="playwright trace", extension="zip")

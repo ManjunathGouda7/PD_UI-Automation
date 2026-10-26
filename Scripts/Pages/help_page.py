@@ -8,8 +8,9 @@ import re
 
 from playwright.sync_api import Page
 
+from Scripts.Helpers import reporting
 from Scripts.Helpers.Locators import HelpLocators
-from Scripts.Pages.base_page import REPORTS_DIR, BasePage
+from Scripts.Pages.base_page import BasePage
 
 
 class HelpPage(BasePage):
@@ -50,7 +51,6 @@ class HelpPage(BasePage):
         failure = download.failure()
         if failure:
             raise AssertionError(f"Debug log download failed: {failure}")
-        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-        target = REPORTS_DIR / f"downloads_{download.suggested_filename}"
+        target = reporting.downloads_dir() / download.suggested_filename
         download.save_as(str(target))
         return target

@@ -36,6 +36,7 @@ class TestAppShell:
         assert app.nav_panel_names() == APP["panels"]
 
     def test_TC_03_connection_setup_is_default_panel(self, app: AppPage):
+        app.load()  # the browser page is shared across tests; check the state of a fresh load
         assert app.active_panel_name() == "Connection Setup"
         assert ConnectionPage(app.page).is_active()
 

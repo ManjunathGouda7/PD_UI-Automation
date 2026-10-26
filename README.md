@@ -91,11 +91,27 @@ Notes on the application that shaped the design:
 * `/api/C2Api/GetConnectionStatus` is **not** the UI tester status — use `GET /api/ConnectionSetup`
   (`C2ApiClient.is_tester_connected()`).
 
-## Failure artifacts
+## Reports
 
-On failure: `Reports/fail_<test>_<ts>.png`, a Playwright trace `Reports/trace_<test>_<ts>.zip`
-(`playwright show-trace <file>`), backend state at failure time in the log, and Allure attachments when
-`--allure` is used. JUnit XML: `Reports/junit.xml`. Logs: `logs/automation.log`.
+Every run (GUI, `run.py` or plain pytest) writes its own folder, named after the panel(s) it covered:
+
+```
+Reports/
+  Connection_Setup/2026-10-26_14-52-16/      one panel
+    report.html  report.xlsx  summary.json
+    fail_<test>.png  trace_<test>.zip         only for failed tests
+    downloads/                                files downloaded by tests (e.g. Debug_Log.txt)
+  All_Panels/2026-10-26_14-53-45/             Run All
+    report.html  report.xlsx  summary.json    overall
+    Connection_Setup/ Help/ REST_API/ ...     per-panel report + that panel's failure artifacts
+  Multiple_Panels/<timestamp>/                any other mix of panels (same layout as All_Panels)
+```
+
+Open a trace with `playwright show-trace <trace.zip>`. The GUI's **📂 Open Report** button opens the last run's folder.
+CI also writes JUnit XML to `Reports/junit.xml`; `--allure` adds Allure results. Logs: `logs/automation.log`.
+
+One browser window serves the whole run: tests share a page that is reset between tests (popups and menus
+closed, app reloaded only if unhealthy), so the window is not closed and reopened per test.
 
 ## Known product issues (tracked by tests)
 
