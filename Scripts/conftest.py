@@ -275,6 +275,7 @@ def _save_failure_artifacts(pg: Page, ctx: BrowserContext, node, console_errors:
     trace = folder / f"trace_{safe}.zip"
     try:
         pg.screenshot(path=str(shot), full_page=False)
+        node.user_properties.append(("screenshot", str(shot)))
         logger.info(f"Failure screenshot: {shot}")
         if allure:
             allure.attach.file(str(shot), name="failure screenshot", attachment_type=allure.attachment_type.PNG)
@@ -282,6 +283,7 @@ def _save_failure_artifacts(pg: Page, ctx: BrowserContext, node, console_errors:
         logger.warning(f"Could not capture screenshot: {e}")
     try:
         ctx.tracing.stop_chunk(path=str(trace))
+        node.user_properties.append(("trace", str(trace)))
         logger.info(f"Playwright trace: {trace} (open with: playwright show-trace {trace})")
         if allure:
             allure.attach.file(str(trace), name="playwright trace", extension="zip")
