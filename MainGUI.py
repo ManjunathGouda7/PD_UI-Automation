@@ -18,6 +18,7 @@ if str(ROOT_DIR) not in sys.path:
 from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
+from Scripts.Helpers import run_lock  # noqa: E402
 from Scripts.Helpers.config import Config  # noqa: E402
 from Scripts.UI.app import MainWindow  # noqa: E402
 from Scripts.UI.gui_events import EVENT_PREFIX  # noqa: E402
@@ -46,6 +47,10 @@ class GUIController(QObject):
             return
 
         w = self.window
+        holder = run_lock.read_holder()
+        if holder and run_lock.is_active(holder):
+            w.append_log(f"[BLOCKED] {run_lock.RunLockedError(holder)}")
+            return
         dut_ip = w.ip_input.text().strip() or Config.dut_ip()
         targets = ["Scripts/TestCases"] if set(node_ids) == set(w.all_node_ids()) else node_ids
         args = ["-m", "pytest", *targets, "-p", "Scripts.UI.gui_events", "-p", "no:cacheprovider",
@@ -59,6 +64,7 @@ class GUIController(QObject):
         env = QProcessEnvironment.systemEnvironment()
         env.insert("HEADLESS", "true" if w.headless_chk.isChecked() else "false")
         env.insert("DUT_IP", dut_ip)
+        env.insert("BROWSER", w.browser_combo.currentText())
         env.insert("PYTHONUNBUFFERED", "1")
         env.insert("PYTHONIOENCODING", "utf-8")
 

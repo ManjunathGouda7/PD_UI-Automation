@@ -38,6 +38,12 @@ The suite runs against a shared, real tester. By default it is **read-only**:
 * No silent fallback: if the backend is unreachable the run aborts. The offline mock is used only with
   `--mock`, serves the API only (UI tests are skipped), and refuses to start if port 5003 is in use.
 * UI tests must not run in parallel against one tester (`-w` > 1 is for API tests only).
+* **One run at a time:** runs that use the browser or tester take `Reports/.tester_run.lock` (owner PID, user,
+  host, start time). A second run - GUI, CLI or Jenkins - stops with a message naming the holder. Locks of
+  crashed runs are detected and replaced. API-only, mock and collect-only runs don't take the lock.
+* Generic API checks only call endpoints listed in `READ_ONLY_GET_ENDPOINTS`: several GETs on this backend
+  change state (`GetDeleteAllTestData`, `GetUpdateSystemFirmware`, `StopTestExecution`, `SetQCVoltage*`,
+  `*/ClearDataObjects`, `DiscoverIPAddress`, ...). A unit test rejects risky names in that list.
 * Before tests start, the tester link is sampled `HEALTH_SAMPLES` times; an unstable link is logged and shown
   in the report header (results of tester-dependent tests are then unreliable).
 
@@ -81,6 +87,7 @@ Precedence: environment variable → `Configurations/.env` → `jsons/Inputs.jso
 | `BASE_URL` | `http://localhost:5003` | GRL software host; the versioned page is resolved from `/api/App/GetURLVersionExtension` |
 | `DUT_IP` | `192.168.255.1` (Inputs.json) | Tester IP used by the connect test |
 | `HEADLESS` | `true` | Browser mode |
+| `BROWSER` | `chromium` | `chromium` (Playwright's bundled build), `msedge`, `chrome` (installed browsers) or `firefox`; also `run.py --browser`, GUI dropdown |
 | `ALLOW_HW_ACTIONS` | `false` | Enable `hardware` tests |
 | `STRICT_HARDWARE` | `false` | Fail instead of skip without a tester |
 | `MOCK_SERVER` | `false` | Offline API mock |
@@ -124,7 +131,7 @@ Every run (GUI, `run.py` or plain pytest) writes its own folder, named after the
 ```
 Reports/
   Connection_Setup/2026-10-26_14-52-16/      one panel
-    report.html  report.xlsx  summary.json
+    report.html  report.xlsx  summary.json  run.log
     fail_<test>.png  trace_<test>.zip         only for failed tests
     downloads/                                files downloaded by tests (e.g. Debug_Log.txt)
   All_Panels/2026-10-26_14-53-45/             Run All
@@ -134,7 +141,8 @@ Reports/
 ```
 
 Each `<Panel>/` (and `All_Panels/`, `Multiple_Panels/`) folder also keeps `history.json`, shown as a pass-rate
-trend in the report. Report header: run environment, GRL version, tester status / serial / firmware /
+trend in the report. Report header: run environment, browser, test-code revision (branch@commit, flags local
+changes), GRL version, tester status / serial / firmware /
 calibration and the tester-link health check. The HTML results table filters by result, and failed rows
 expand to the error, an inline screenshot and the trace command.
 

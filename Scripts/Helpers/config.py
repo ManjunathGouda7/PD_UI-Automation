@@ -133,6 +133,18 @@ class Config:
     def is_headless(cls) -> bool:
         return cls.get_bool("HEADLESS", True)
 
+    SUPPORTED_BROWSERS = ("chromium", "msedge", "chrome", "firefox")
+
+    @classmethod
+    def browser(cls) -> str:
+        """Browser engine for UI tests: chromium (Playwright's bundled build), msedge, chrome or firefox."""
+        name = str(cls.get("BROWSER", "chromium")).strip().lower()
+        aliases = {"edge": "msedge", "ms-edge": "msedge", "google-chrome": "chrome"}
+        name = aliases.get(name, name)
+        if name not in cls.SUPPORTED_BROWSERS:
+            raise ValueError(f"Unsupported BROWSER={name!r}; use one of {cls.SUPPORTED_BROWSERS}")
+        return name
+
     @classmethod
     def is_mock_mode(cls) -> bool:
         """True when the run targets the offline API mock instead of the real C2 backend."""

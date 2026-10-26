@@ -196,6 +196,11 @@ class MainWindow(QMainWindow):
         self.hw_actions_chk = QCheckBox("Allow hardware actions")
         self.hw_actions_chk.setToolTip("Also run tests that connect, apply configuration or otherwise change the tester")
         o.addWidget(self.hw_actions_chk)
+        o.addWidget(QLabel("Browser:"))
+        self.browser_combo = QComboBox()
+        self.browser_combo.addItems(["chromium", "msedge", "chrome", "firefox"])
+        self.browser_combo.setToolTip("chromium = Playwright's bundled Chrome; msedge / chrome = installed browsers")
+        o.addWidget(self.browser_combo)
         self.headless_chk = QCheckBox("Headless")
         self.headless_chk.setToolTip("Run Chrome without a visible window")
         o.addWidget(self.headless_chk)
@@ -585,6 +590,7 @@ class MainWindow(QMainWindow):
         self.retries_combo.setCurrentText(str(s.value("retries", "0")))
         self.hw_actions_chk.setChecked(s.value("hw_actions", False, type=bool))
         self.headless_chk.setChecked(s.value("headless", False, type=bool))
+        self.browser_combo.setCurrentText(str(s.value("browser", "chromium")))
         unchecked = set(s.value("unchecked", [], type=list) or [])
         for item in self._test_items():
             if item.data(0, Qt.ItemDataRole.UserRole)[0] in unchecked:
@@ -601,6 +607,7 @@ class MainWindow(QMainWindow):
         s.setValue("retries", self.retries_combo.currentText())
         s.setValue("hw_actions", self.hw_actions_chk.isChecked())
         s.setValue("headless", self.headless_chk.isChecked())
+        s.setValue("browser", self.browser_combo.currentText())
         s.setValue("unchecked", [item.data(0, Qt.ItemDataRole.UserRole)[0] for item in self._test_items()
                                  if item.checkState(0) == Qt.CheckState.Unchecked])
         s.setValue("panel", -1 if self.current_panel is None else self.current_panel)

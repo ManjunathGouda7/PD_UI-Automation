@@ -14,6 +14,39 @@ from urllib3.util.retry import Retry
 from Scripts.Helpers.config import Config
 from Scripts.Helpers.logger import logger
 
+# Parameterless GET endpoints that only READ state, used by the API contract tests.
+# Several GETs on this backend have side effects (GetDeleteAllTestData, GetUpdateSystemFirmware,
+# StopTestExecution, ForceStopCurrentExecution, SetQCVoltage*, */ClearDataObjects, DiscoverIPAddress,
+# GetEloadsOnScan, GetTryCableFlip, GetConfigControllerStopCapture, ...) - never add those here.
+READ_ONLY_GET_ENDPOINTS: tuple[str, ...] = (
+    "api/App/GetAppState", "api/App/GetSoftwareVersion", "api/App/GetURLVersionExtension",
+    "api/App/GetAppStatusMode", "api/App/GetPdModeStatus", "api/App/GetDisablePopUpStatus",
+    "api/App/GetMoiFields",
+    "api/C2Api/GetSerialNumber", "api/C2Api/GetConnectionStatus", "api/C2Api/GetCaptureStatus",
+    "api/C2Api/GetCaptureFilenameWithPath", "api/C2Api/GetCommandExecutionStatus",
+    "api/ConfigControl/GetC2Configuration", "api/ConfigControl/GetConfigSendMessage",
+    "api/ConnectionSetup", "api/ConnectionSetup/GetIPAddressHistory",
+    "api/IRDropCalibration/GetIRDropCalibrationTableValues", "api/IRDropCalibration/GetIRDropCalibration",
+    "api/IRDropCalibration/GetIrDropCalibrationStatus", "api/IRDropCalibration/GetIrDropLogMessage",
+    "api/Plot/GetSignalMaskData", "api/Plot/GetChannelList", "api/Plot/GetEnabledChannels",
+    "api/Plot/GetFileReadStatus", "api/Plot/GetWaveformStartTime", "api/Plot/GetWaveformStopTime",
+    "api/ProductCapability/GetPortConfigurations", "api/ProductCapability/GetSOPTypes",
+    "api/ReportsGeneration/GetReportFileName", "api/ReportsGeneration/GetResultsFolderName",
+    "api/ReportsGeneration/GetReportInputs", "api/ReportsGeneration/GetTestRunInfo",
+    "api/Results/GetTestResults", "api/Results/GetCapsResults", "api/Results/GetConfigureControllerResults",
+    "api/Results/GetTestResultOffline",
+    "api/TestConfiguration/GetCurrentSelectedPortStatus", "api/TestConfiguration/GetTestCaseList",
+    "api/TestConfiguration/GetQcLegacyTestCaseList", "api/TestConfiguration/GetEloadConnected",
+    "api/TestConfiguration/GetCertificationFilter", "api/TestConfiguration/GetCableName",
+    "api/TestConfiguration/GetCommonTestConfiguration", "api/TestConfiguration/GetFunctionalConfiguration",
+    "api/TestConfiguration/GetPD2Configuration", "api/TestConfiguration/GetPD3Configuration",
+    "api/TestConfiguration/GetPdMergedConfiguration", "api/TestConfiguration/GetDeterministicConfiguration",
+    "api/TestConfiguration/GetDpAltConfiguration", "api/TestConfiguration/GetQC3Configuration",
+    "api/TestConfiguration/GetQC4Configuration", "api/TestConfiguration/GetSPTConfiguration",
+    "api/TestConfiguration/GetTBTConfiguration", "api/TestConfiguration/GetCBConfiguration",
+    "api/TestConfiguration/GetBC_1_2Configuration", "api/TestConfiguration/GetMfiChargerConfiguration",
+)
+
 
 class C2ApiError(Exception):
     """Exception raised for C2 API request errors."""
@@ -82,6 +115,12 @@ class C2ApiClient:
             return res.status_code == 200
         except Exception:
             return False
+
+    def get_raw(self, path: str) -> Any:
+        """GET a read-only endpoint by path (must be listed in READ_ONLY_GET_ENDPOINTS)."""
+        if path.lstrip("/") not in READ_ONLY_GET_ENDPOINTS:
+            raise ValueError(f"{path} is not in READ_ONLY_GET_ENDPOINTS; refusing to call it generically")
+        return self._request("GET", path)
 
     def get_swagger_spec(self) -> dict[str, Any] | None:
         """Fetch the full OpenAPI specification."""

@@ -16,7 +16,7 @@ import time
 from playwright.sync_api import Browser, BrowserContext, Page, sync_playwright
 import pytest
 
-from Scripts.Helpers import reporting
+from Scripts.Helpers import reporting, run_lock
 from Scripts.Helpers.api_client import C2ApiClient
 from Scripts.Helpers.config import Config
 from Scripts.Helpers.Locators import AppLocators
@@ -66,6 +66,27 @@ def pytest_collection_modifyitems(config, items):
         if item.get_closest_marker("hardware") and not allow_hw:
             item.add_marker(pytest.mark.skip(
                 reason="changes tester state; enable with --allow-hw-actions / ALLOW_HW_ACTIONS=true"))
+    _acquire_run_lock(config, items)
+
+
+def _acquire_run_lock(config, items) -> None:
+    """One run at a time may use the tester. API-only, mock and collect-only runs don't need the lock."""
+    if (hasattr(config, "workerinput") or config.option.collectonly or Config.is_mock_mode()
+            or os.environ.get("C2_RUN_LOCK", "true").lower() in ("0", "false", "no")):
+        return
+    uses_tester = any(i.get_closest_marker(m) for i in items for m in ("ui", "hardware", "requires_tester"))
+    if not uses_tester:
+        return
+    try:
+        run_lock.acquire(command=" ".join(config.invocation_params.args) or "pytest")
+    except run_lock.RunLockedError as e:
+        pytest.exit(str(e), returncode=5)
+    config._c2_run_lock = True
+
+
+def pytest_unconfigure(config):
+    if getattr(config, "_c2_run_lock", False):
+        run_lock.release()
 
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
@@ -132,6 +153,8 @@ def _run_environment(client: C2ApiClient, version: str, mock: bool) -> dict[str,
         "C2 backend": client.base_url + (" (MOCK)" if mock else ""),
         "GRL software": version,
         "Hardware actions": "allowed" if Config.allow_hw_actions() else "blocked (read-only run)",
+        "Browser": Config.browser() + (" (headless)" if Config.is_headless() else ""),
+        "Test code": _git_revision(),
     }
     if mock:
         return env
@@ -151,6 +174,22 @@ def _run_environment(client: C2ApiClient, version: str, mock: bool) -> dict[str,
     if samples > 0:
         env["Tester link"] = _tester_link_health(client, samples)
     return env
+
+
+def _git_revision() -> str:
+    """'<branch>@<short sha>' plus ' +local changes' when the working tree is dirty."""
+    import subprocess
+
+    def git(*args: str) -> str:
+        res = subprocess.run(["git", *args], capture_output=True, text=True, check=False,
+                             cwd=os.path.dirname(__file__))
+        return res.stdout.strip() if res.returncode == 0 else ""
+
+    sha = git("rev-parse", "--short", "HEAD")
+    if not sha:
+        return "unknown (not a git checkout)"
+    dirty = " +local changes" if git("status", "--porcelain", "--untracked-files=no") else ""
+    return f"{git('rev-parse', '--abbrev-ref', 'HEAD')}@{sha}{dirty}"
 
 
 def _playwright_version() -> str:
@@ -259,8 +298,15 @@ class BrowserSession:
 
 @pytest.fixture(scope="session")
 def browser_instance():
+    """BROWSER = chromium (bundled, default) | msedge | chrome | firefox."""
+    name = Config.browser()
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=Config.is_headless())
+        if name == "firefox":
+            browser = p.firefox.launch(headless=Config.is_headless())
+        else:
+            channel = name if name in ("msedge", "chrome") else None
+            browser = p.chromium.launch(headless=Config.is_headless(), channel=channel)
+        logger.info(f"Browser: {name} {browser.version}")
         yield browser
         browser.close()
 

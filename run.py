@@ -10,6 +10,7 @@ Examples:
   python run.py --smart               # suites affected by your git changes
   python run.py --mode api --mock     # API suite against the offline mock
   python run.py --serve-mock          # just run the mock API server on :5003
+  python run.py --mode smoke --browser msedge   # same suite in Microsoft Edge
   python run.py --gui                 # PyQt6 desktop runner
 """
 import argparse
@@ -70,6 +71,8 @@ def build_pytest_cmd(args: argparse.Namespace) -> list[str]:
 def run_tests(args: argparse.Namespace) -> int:
     if args.headless is not None:
         os.environ["HEADLESS"] = "true" if args.headless else "false"
+    if args.browser:
+        os.environ["BROWSER"] = args.browser
     cmd = build_pytest_cmd(args)
     print("[COMMAND] " + " ".join(cmd))
     return subprocess.call(cmd, cwd=str(ROOT_DIR))
@@ -109,6 +112,8 @@ def main() -> None:
     parser.add_argument("-r", "--retries", type=int, default=0, help="reruns for failed tests")
     parser.add_argument("--headless", action=argparse.BooleanOptionalAction, default=None,
                         help="run the browser headless (default from HEADLESS env / config)")
+    parser.add_argument("--browser", choices=["chromium", "msedge", "chrome", "firefox"],
+                        help="browser for UI tests (default from BROWSER env / config: chromium)")
     parser.add_argument("--mock", action="store_true", help="run against the offline API mock")
     parser.add_argument("--allow-hw-actions", action="store_true",
                         help="enable tests that change tester state (connect, apply config, ...)")

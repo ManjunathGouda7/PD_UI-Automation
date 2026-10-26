@@ -9,7 +9,7 @@ import re
 import pytest
 
 from Scripts.Data.test_data_manager import test_data_manager
-from Scripts.Helpers.api_client import C2ApiClient
+from Scripts.Helpers.api_client import READ_ONLY_GET_ENDPOINTS, C2ApiClient
 from Scripts.Helpers.config import Config
 from Scripts.Helpers.swagger_contract import SwaggerContract
 
@@ -144,3 +144,14 @@ class TestApiContract:
         assert schema, f"No 200 schema published for {path}"
         errors = contract.validate(fetch(api_client), schema)
         assert not errors, f"{path} violates its Swagger schema:\n" + "\n".join(errors[:20])
+
+    @pytest.mark.parametrize("endpoint", READ_ONLY_GET_ENDPOINTS, ids=lambda e: e.split("api/", 1)[-1])
+    def test_read_only_endpoint_matches_schema(self, contract: SwaggerContract, api_client: C2ApiClient,
+                                               endpoint: str):
+        """Every whitelisted read-only GET answers 200 and its body matches the published schema."""
+        assert contract.has_operation("GET", endpoint), f"{endpoint} no longer in the Swagger spec"
+        body = api_client.get_raw(endpoint)
+        schema = contract.response_schema("/" + endpoint)
+        if schema and schema.get("type") != "string":
+            errors = contract.validate(body, schema)
+            assert not errors, f"{endpoint} violates its schema:\n" + "\n".join(errors[:20])

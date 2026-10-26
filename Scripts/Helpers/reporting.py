@@ -20,6 +20,7 @@ import ast
 from datetime import datetime
 from functools import cache
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -145,6 +146,7 @@ class RunReporter:
         _run_dir = REPORTS_ROOT / label / stamp
         _run_dir.mkdir(parents=True, exist_ok=True)
         _environment.clear()
+        self._attach_run_log(_run_dir / "run.log")
         self.order = [item.nodeid for item in session.items]
         for item in session.items:
             spec = item.get_closest_marker("spec")
@@ -181,6 +183,7 @@ class RunReporter:
             entry["result"], entry["remarks"] = "PASSED", ""
 
     def pytest_sessionfinish(self, session, exitstatus):
+        self._detach_run_log()
         if _run_dir is None or not self.results:
             return
         if all(r["result"] == "NOT RUN" for r in self.results.values()):
@@ -205,6 +208,24 @@ class RunReporter:
         terminal = self.config.pluginmanager.get_plugin("terminalreporter")
         if terminal:
             terminal.write_line(f"Reports written to: {_run_dir}")
+
+    def _attach_run_log(self, path: Path) -> None:
+        """Copies the framework log of this run into the run folder (run.log)."""
+        from Scripts.Helpers.logger import logger
+
+        self._log_handler = logging.FileHandler(path, encoding="utf-8")
+        self._log_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s",
+                                                         "%Y-%m-%d %H:%M:%S"))
+        logger.addHandler(self._log_handler)
+
+    def _detach_run_log(self) -> None:
+        handler = getattr(self, "_log_handler", None)
+        if handler:
+            from Scripts.Helpers.logger import logger
+
+            logger.removeHandler(handler)
+            handler.close()
+            self._log_handler = None
 
     @classmethod
     def _update_history(cls, label_dir: Path, run_name: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
