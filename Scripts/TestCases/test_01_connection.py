@@ -32,6 +32,7 @@ class TestConnectionPanel:
         assert list(info) == CONN["tester_fields"]
         assert all(v for v in info.values()), f"Empty tester info cell: {info}"
 
+    @pytest.mark.spec("CONN-05", partial=True)
     @pytest.mark.smoke
     def test_TC_02_ip_field_matches_tester_ip_row_and_history(self, conn: ConnectionPage, api_client: C2ApiClient):
         ip = conn.ip_address()
@@ -40,6 +41,7 @@ class TestConnectionPanel:
         history = [h["ipAddress"] for h in api_client.get_ip_history()]
         assert ip in history, f"UI IP {ip} not in GET /api/ConnectionSetup/GetIPAddressHistory {history}"
 
+    @pytest.mark.spec("CONN-09")
     @pytest.mark.smoke
     def test_TC_03_tester_status_and_ip_match_api(self, conn: ConnectionPage, api_client: C2ApiClient):
         ui = conn.tester_info()
@@ -52,6 +54,7 @@ class TestConnectionPanel:
         assert conn.is_enabled(ConnectionLocators.CONNECT_BTN)
         assert conn.license_header_visible()
 
+    @pytest.mark.spec("CONN-08", "CONN-10")
     @pytest.mark.requires_tester
     def test_TC_05_connected_tester_details_match_api(self, conn: ConnectionPage, api_client: C2ApiClient):
         def expected() -> dict[str, str]:
@@ -73,6 +76,7 @@ class TestConnectionPanel:
         assert re.fullmatch(r"GRL-V-DPWR-EPR-\d+", ui["Serial Number"]), ui
         assert "0001-01-01" not in (ui["Last Calibration Date"], ui["Calibration Due"]), ui
 
+    @pytest.mark.spec("CONN-11", partial=True)
     @pytest.mark.requires_tester
     def test_TC_06_tester_calibration_is_valid_and_not_expired(self, conn: ConnectionPage):
         info = conn.tester_info()
@@ -80,6 +84,7 @@ class TestConnectionPanel:
         due = date.fromisoformat(info["Calibration Due"])
         assert due >= date.today(), f"Tester calibration expired on {due}"
 
+    @pytest.mark.spec("CONN-12", "LIC-01")
     @pytest.mark.requires_tester
     def test_TC_07_license_table_matches_api(self, conn: ConnectionPage, api_client: C2ApiClient):
         ui = [(lic["name"], lic["type"]) for lic in conn.licenses()]
@@ -87,12 +92,14 @@ class TestConnectionPanel:
         assert ui, "No licenses listed for the connected tester"
         assert ui == api
 
+    @pytest.mark.spec("CONN-04", "GEN-06", partial=True)
     @pytest.mark.hardware
     def test_TC_08_scan_network_discovers_testers(self, conn: ConnectionPage, api_client: C2ApiClient):
         conn.scan_network()
         assert conn.is_enabled(ConnectionLocators.SCAN_NETWORK_BTN)
         assert api_client.get_ip_history(), "No tester addresses known after scan"
 
+    @pytest.mark.spec("CONN-07", "GEN-05")
     @pytest.mark.hardware
     def test_TC_09_connect_to_configured_tester(self, conn: ConnectionPage, api_client: C2ApiClient):
         info = conn.connect(Config.dut_ip())

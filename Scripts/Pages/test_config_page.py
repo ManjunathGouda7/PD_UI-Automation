@@ -47,17 +47,15 @@ class TestConfigPage(BasePage):
     def clear_search(self) -> None:
         self.fill(TestConfigLocators.SEARCH_INPUT, "")
 
-    def tree_titles(self) -> list[str]:
-        return [" ".join(t.split()) for t in self.panel.locator(TestConfigLocators.TREE_NODE_LABEL).all_inner_texts()]
-
-    def tree_node_count(self, wait_ms: int = 10000) -> int:
-        """Rendered tree nodes; waits up to `wait_ms` for the first node to appear."""
-        nodes = self.panel.locator(TestConfigLocators.TREE_NODE)
+    def tree_suite_titles(self, wait_ms: int = 15000) -> list[str]:
+        """Top-level suites of the test tree, e.g. 'Power Delivery 3.2 Tests-v.Q3-2026'."""
+        suites = self.panel.locator(TestConfigLocators.TREE_SUITE_NODE)
         try:
-            expect(nodes.first).to_be_visible(timeout=wait_ms)
+            expect(suites.first).to_be_visible(timeout=wait_ms)
         except AssertionError:
-            return 0
-        return nodes.count()
+            return []
+        return [" ".join(suites.nth(i).locator(TestConfigLocators.TREE_NODE_LABEL).first.inner_text().split())
+                for i in range(suites.count())]
 
     def set_expand_test_list(self, expanded: bool) -> None:
         self.set_checked(TestConfigLocators.EXPAND_TEST_LIST, expanded)

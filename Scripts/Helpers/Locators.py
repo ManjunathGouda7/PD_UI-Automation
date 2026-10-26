@@ -89,9 +89,11 @@ class TestConfigLocators:
     SELECTED_COUNT = ".selected-test-count-div strong"
     RERUN_SELECTED_CHECKBOX = "#tcRunSelectedTestsCheckBox"
     RERUN_COUNT_INPUT = "#tcRunSelectedTestInputField"
-    TEST_TREE = "#test-selection-tree .react-checkbox-tree"
-    TREE_NODE = "#test-selection-tree .react-checkbox-tree li"
-    TREE_NODE_LABEL = "#test-selection-tree .react-checkbox-tree li .rct-title"
+    # rc-tree inside the Test Config panel. (#test-selection-tree is the Results panel's tree.)
+    TEST_TREE = ".test-selection-treeview-container ul.rc-tree"
+    TREE_SUITE_NODE = ".test-selection-treeview-container ul.rc-tree > li"
+    TREE_NODE = ".test-selection-treeview-container ul.rc-tree li"
+    TREE_NODE_LABEL = ".rc-tree-title"
 
     # Report Generation inputs (DUT / Test information)
     MANUFACTURER_INPUT = "#tcReportManufacturerInputField"

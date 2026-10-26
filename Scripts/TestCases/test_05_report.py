@@ -21,10 +21,12 @@ class TestReportPanel:
         labels = report.button_labels()
         assert labels == {name: name for name in ReportPage.BUTTONS}
 
+    @pytest.mark.spec("RPT-15", partial=True)
     def test_TC_02_report_location_is_shown(self, report: ReportPage):
         location = report.report_location()
         assert location and "Report" in location, location
 
+    @pytest.mark.spec("RPT-02", partial=True)
     def test_TC_03_download_html_report_prompts_for_file_name(self, report: ReportPage):
         prompt = report.open_download_html_prompt()
         try:

@@ -34,6 +34,7 @@ class TestProductCapabilityPanel:
         assert pc.dut_type() == port_a["dutType"]
         assert pc.cable() == port_a["cableType"]
 
+    @pytest.mark.spec("VIF-18")
     @pytest.mark.xfail(strict=True, reason=(
         "PRODUCT DEFECT (1.1.1.4): after a project name is typed and cleared - or is whitespace "
         "only - the Save button stays enabled although the field shows a validation error. "
@@ -45,6 +46,7 @@ class TestProductCapabilityPanel:
         pc.type_project_name("")
         assert not pc.project_save_enabled()
 
+    @pytest.mark.spec("VIF-20", partial=True)
     def test_TC_05_vif_generator_link_present(self, pc: ProductCapabilityPage):
         assert pc.vif_generator_href(), "USB-IF VIF Generator link has no href"
 

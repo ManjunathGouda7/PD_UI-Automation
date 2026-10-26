@@ -38,6 +38,19 @@ pipeline {
             }
         }
 
+        stage('Framework Unit Tests') {
+            steps {
+                bat 'python -m pytest tests/unit -q --junitxml=Reports/unit-junit.xml'
+            }
+        }
+
+        stage('Locator Health') {
+            steps {
+                // Read-only: fails fast if a new GRL build changed the UI the page objects rely on
+                bat 'python tools/locator_check.py'
+            }
+        }
+
         stage('Tests') {
             steps {
                 script {
@@ -52,7 +65,8 @@ pipeline {
 
     post {
         always {
-            junit allowEmptyResults: true, testResults: 'Reports/junit.xml'
+            bat 'python tools/traceability.py'
+            junit allowEmptyResults: true, testResults: 'Reports/junit.xml, Reports/unit-junit.xml'
             archiveArtifacts artifacts: 'Reports/**, logs/**', allowEmptyArchive: true
         }
     }

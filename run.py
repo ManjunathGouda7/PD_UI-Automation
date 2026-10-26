@@ -4,6 +4,7 @@ Unified CLI for the GRL USB PD C2 (V-DPWR-EPR) automation suite.
 Examples:
   python run.py                       # smoke suite (read-only, UI + API)
   python run.py --mode api            # REST API suite only (no browser)
+  python run.py --mode unit           # framework self-tests (no backend, no browser)
   python run.py --mode full           # everything that is safe to run (read-only)
   python run.py --mode full --allow-hw-actions --strict-hardware   # include tests that drive the tester
   python run.py --smart               # suites affected by your git changes
@@ -34,6 +35,8 @@ def build_pytest_cmd(args: argparse.Namespace) -> list[str]:
         selected = select_tests()
         print(f"[SMART] {len(selected)} suite(s): {', '.join(selected)}")
         cmd.extend(selected)
+    elif args.mode == "unit":
+        cmd.append("tests/unit")  # framework self-tests: no backend, no browser
     elif args.mode in ("api", "smoke"):
         marker_parts.append(args.mode)
     # full / regression: everything under testpaths
@@ -97,7 +100,7 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--mode", choices=["api", "smoke", "full", "regression"], default="smoke",
+    parser.add_argument("--mode", choices=["api", "smoke", "full", "regression", "unit"], default="smoke",
                         help="test selection profile (default: smoke)")
     parser.add_argument("--smart", action="store_true", help="select suites from git changes")
     parser.add_argument("-m", "--markers", help="extra pytest marker expression")

@@ -17,16 +17,19 @@ def results(page: Page) -> ResultsPage:
 
 @pytest.mark.results
 class TestResultsPanel:
+    @pytest.mark.spec("RES-03", partial=True)
     def test_TC_01_summary_has_four_numeric_counters(self, results: ResultsPage):
         summary = results.summary()
         assert list(summary) == list(ResultsPage.SUMMARY_KEYS)
         assert all(v >= 0 for v in summary.values())
 
+    @pytest.mark.spec("RES-16")
     @pytest.mark.smoke
     def test_TC_02_summary_matches_api(self, results: ResultsPage, api_client: C2ApiClient):
         check = results.cross_validate_with_api(api_client)
         assert check["match"], f"UI {check['ui']} != API {check['api']}"
 
+    @pytest.mark.spec("RES-10", "RES-11", "RES-12", "RES-13", partial=True)
     def test_TC_03_chart_toolbar_buttons_available(self, results: ResultsPage):
         states = results.toolbar_button_states()
         unavailable = [sel for sel, ok in states.items() if not ok]
@@ -37,11 +40,13 @@ class TestResultsPanel:
         ResultsLocators.V_ZOOM_IN_BTN, ResultsLocators.V_ZOOM_OUT_BTN,
         ResultsLocators.FIT_BTN, ResultsLocators.PAN_LEFT_BTN, ResultsLocators.PAN_RIGHT_BTN,
     ])
+    @pytest.mark.spec("RES-10", "RES-11", partial=True)
     def test_TC_04_chart_navigation_buttons_respond(self, results: ResultsPage, button: str, popup_guard):
         results.click_toolbar(button)
         assert results.is_active()
         assert not [p for p in popup_guard.seen if "error" in p.message.lower()], popup_guard.seen
 
+    @pytest.mark.spec("RES-15", partial=True)
     def test_TC_05_plot_area_offers_file_load_when_empty(self, results: ResultsPage, api_client: C2ApiClient):
         if api_client.get_total_pd_message_count():
             pytest.skip("Capture data present; empty-state placeholder not shown")

@@ -20,6 +20,7 @@ def lb(page: Page) -> LoopBackPage:
 
 @pytest.mark.loopback
 class TestLoopBackPanel:
+    @pytest.mark.spec("LB-02", partial=True)
     @pytest.mark.smoke
     def test_TC_01_data_fields_present_with_units(self, lb: LoopBackPage):
         data = lb.data()
@@ -29,11 +30,13 @@ class TestLoopBackPanel:
         assert re.fullmatch(r"[\d.]+ Mbps", data["Effective Throughput"]), data
         assert data["Status"], "LoopBack status is empty"
 
+    @pytest.mark.spec("LB-01", partial=True)
     def test_TC_02_start_stop_disabled_without_device(self, lb: LoopBackPage):
         if lb.selected_device():
             pytest.skip("A loopback device is selected")
         assert not lb.start_enabled()
         assert not lb.stop_enabled()
 
+    @pytest.mark.spec("LB-01", partial=True)
     def test_TC_03_device_list_has_placeholder(self, lb: LoopBackPage):
         assert lb.device_options()[0] == "Select a device..."

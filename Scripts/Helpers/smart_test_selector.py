@@ -9,6 +9,7 @@ SUITES = "Scripts/TestCases"
 GLOBAL_PATTERNS = [
     "Scripts/conftest.py", "Scripts/Pages/base_page.py", "Scripts/Pages/app_page.py",
     "Scripts/Helpers/Locators.py", "Scripts/Helpers/config.py", "Scripts/Helpers/popups.py",
+    "Scripts/Helpers/reporting.py", "Scripts/Helpers/waits.py",
     "pyproject.toml", "requirements.txt",
 ]
 
@@ -22,6 +23,7 @@ PANEL_MAPPINGS = {
     "test_06_configure.py": ["configure_page.py", "test_06_configure.py"],
     "test_07_loopback.py": ["loopback_page.py", "test_07_loopback.py"],
     "test_08_help.py": ["help_page.py", "test_08_help.py"],
+    "test_10_e2e_execution.py": ["test_10_e2e_execution.py"],
     "test_09_api.py": ["api_client.py", "swagger_contract.py", "mock_server.py", "test_09_api.py", "Inputs.json"],
 }
 FALLBACK = [f"{SUITES}/test_00_app_shell.py", f"{SUITES}/test_09_api.py"]

@@ -25,6 +25,7 @@ PANEL_PAGES = [ConnectionPage, ProductCapabilityPage, TestConfigPage, ResultsPag
 @pytest.mark.smoke
 @pytest.mark.shell
 class TestAppShell:
+    @pytest.mark.spec("CONN-01")
     def test_TC_01_title_shows_software_name_version_and_model(self, app: AppPage, api_client: C2ApiClient):
         assert app.page.title() == APP["model_name"]
         assert app.primary_title().startswith(APP["title_prefix"]), app.primary_title()
@@ -32,6 +33,7 @@ class TestAppShell:
         assert app.header_version() == api_client.get_software_version(), \
             "Header version differs from GET /api/App/GetSoftwareVersion"
 
+    @pytest.mark.spec("CONN-02")
     def test_TC_02_left_navigation_lists_all_panels(self, app: AppPage):
         assert app.nav_panel_names() == APP["panels"]
 
@@ -43,6 +45,7 @@ class TestAppShell:
     def test_TC_04_url_uses_backend_version_extension(self, page: Page, api_client: C2ApiClient):
         assert page.url.endswith(f"/{api_client.get_url_version_extension()}.html"), page.url
 
+    @pytest.mark.spec("GEN-09", "GEN-10")
     @pytest.mark.parametrize("page_cls", PANEL_PAGES, ids=[p.PANEL_NAME for p in PANEL_PAGES])
     def test_TC_05_each_panel_becomes_active_and_version_stays_visible(self, app: AppPage, page_cls, api_client):
         panel = page_cls(app.page).open()

@@ -28,7 +28,12 @@
     "calibration_ok": "Calibration Success"
   },
   "product_capability": {
-    "dut_types": ["Consumer Only", "Provider Only", "Dual Role Power[DRP]", "Cable"],
+    "dut_types": [
+      "Consumer Only",
+      "Provider Only",
+      "Dual Role Power[DRP]",
+      "Cable"
+    ],
     "cables": [
       "GRL-SPL EPR Test Cable 1",
       "USB-C STD Test Cable 1",
@@ -46,10 +51,19 @@
     ]
   },
   "configure": {
-    "controller_modes": ["UFP/Sink", "DFP/Source", "DRP"]
+    "controller_modes": [
+      "UFP/Sink",
+      "DFP/Source",
+      "DRP"
+    ]
   },
   "loopback": {
-    "data_labels": ["Transferred Data", "Received Data", "Effective Throughput", "Status"]
+    "data_labels": [
+      "Transferred Data",
+      "Received Data",
+      "Effective Throughput",
+      "Status"
+    ]
   },
   "help": {
     "support_desk_url": "https://support.grlps.com/knowledge-base/kb-tickets/new",
@@ -81,5 +95,11 @@
       "max_power_w": 240,
       "cable": "GRL-SPL EPR Test Cable 1"
     }
+  },
+  "e2e_execution": {
+    "_comment": "Test run by test_10 (hardware). Override with env E2E_TEST_KEY. Pick a short test that suits the DUT on the bench.",
+    "test_key": "TEST.PD.PHY.ALL.1 Transmit Bit Rate and the Drift",
+    "start_timeout_s": 60,
+    "run_timeout_s": 900
   }
 }

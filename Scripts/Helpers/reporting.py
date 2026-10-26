@@ -23,6 +23,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import time
 from typing import Any
 
@@ -32,6 +33,7 @@ TEST_DIR = ROOT_DIR / "Scripts" / "TestCases"
 
 _run_dir: Path | None = None
 _multi_panel = False
+_environment: dict[str, Any] = {}
 
 
 # ----------------------------------------------------------------------------
@@ -119,6 +121,8 @@ def downloads_dir() -> Path:
 class RunReporter:
     """Creates the run folder after collection and writes HTML/Excel/JSON reports at the end."""
 
+    HISTORY_LIMIT = 50
+
     def __init__(self, config):
         self.config = config
         self.results: dict[str, dict[str, Any]] = {}
@@ -140,12 +144,16 @@ class RunReporter:
         stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         _run_dir = REPORTS_ROOT / label / stamp
         _run_dir.mkdir(parents=True, exist_ok=True)
+        _environment.clear()
         self.order = [item.nodeid for item in session.items]
         for item in session.items:
+            spec = item.get_closest_marker("spec")
             self.results[item.nodeid] = {
                 "panel": panel_name(item.path),
                 "title": humanize_test_name(item.name),
-                "result": "NOT RUN", "duration": 0.0, "remarks": "",
+                "spec": ", ".join(spec.args) if spec else "",
+                "result": "NOT RUN", "duration": 0.0, "remarks": "", "message": "",
+                "screenshot": "", "trace": "",
             }
 
     def pytest_runtest_logreport(self, report):
@@ -153,6 +161,9 @@ class RunReporter:
         if entry is None:
             return
         entry["duration"] += report.duration
+        for key, value in report.user_properties:
+            if key in ("screenshot", "trace"):
+                entry[key] = value
         if report.skipped:
             if hasattr(report, "wasxfail"):
                 entry["result"], entry["remarks"] = "XFAIL", report.wasxfail
@@ -161,21 +172,27 @@ class RunReporter:
                 entry["remarks"] = str(report.longrepr[2]) if isinstance(report.longrepr, tuple) else ""
         elif report.failed:
             entry["result"] = "FAILED" if report.when == "call" else "ERROR"
-            lines = str(report.longrepr).strip().splitlines()
-            entry["remarks"] = lines[-1] if lines else "failed"
+            text = report.longreprtext or "failed"
+            lines = [ln for ln in text.strip().splitlines() if ln.strip()]
+            errors = [ln for ln in lines if ln.lstrip().startswith("E ")]
+            entry["remarks"] = (errors[0].lstrip()[1:].strip() if errors else lines[-1])[:300]
+            entry["message"] = text[-8000:]
         elif report.when == "call":
             entry["result"], entry["remarks"] = "PASSED", ""
 
     def pytest_sessionfinish(self, session, exitstatus):
         if _run_dir is None or not self.results:
             return
-        from Scripts.Helpers.config import Config  # local import keeps plugin import cheap
-        dut_ip = Config.dut_ip()
+        if all(r["result"] == "NOT RUN" for r in self.results.values()):
+            # Nothing executed (e.g. run aborted before the first test): no report, no history entry.
+            shutil.rmtree(_run_dir, ignore_errors=True)
+            return
         elapsed = time.time() - self.started
         rows = [self.results[n] | {"node_id": n} for n in self.order]
         label = _run_dir.parent.name
+        history = self._update_history(_run_dir.parent, _run_dir.name, rows)
 
-        self._write(_run_dir, f"{label} - {_run_dir.name}", rows, dut_ip, elapsed)
+        self._write(_run_dir, f"{label} - {_run_dir.name}", rows, elapsed, history)
         if _multi_panel:
             panels: dict[str, list[dict[str, Any]]] = {}
             for row in rows:
@@ -183,42 +200,84 @@ class RunReporter:
             for panel, panel_rows in panels.items():
                 target = _run_dir / safe_name(panel)
                 target.mkdir(exist_ok=True)
-                self._write(target, f"{panel} - {_run_dir.name}", panel_rows, dut_ip,
-                            sum(r["duration"] for r in panel_rows))
+                self._write(target, f"{panel} - {_run_dir.name}", panel_rows,
+                            sum(r["duration"] for r in panel_rows), [])
         terminal = self.config.pluginmanager.get_plugin("terminalreporter")
         if terminal:
             terminal.write_line(f"Reports written to: {_run_dir}")
 
+    @classmethod
+    def _update_history(cls, label_dir: Path, run_name: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Appends this run to <label>/history.json (pass-rate trend in the report)."""
+        path = label_dir / "history.json"
+        try:
+            history = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            history = []
+        counts = _counts(rows)
+        history.append({
+            "run": run_name,
+            "total": len(rows),
+            "passed": counts.get("PASSED", 0),
+            "failed": counts.get("FAILED", 0) + counts.get("ERROR", 0),
+            "skipped": counts.get("SKIPPED", 0) + counts.get("XFAIL", 0) + counts.get("NOT RUN", 0),
+        })
+        history = history[-cls.HISTORY_LIMIT:]
+        path.write_text(json.dumps(history, indent=2), encoding="utf-8")
+        return history
+
     @staticmethod
-    def _write(folder: Path, name: str, rows: list[dict[str, Any]], dut_ip: str, elapsed: float) -> None:
+    def _write(folder: Path, name: str, rows: list[dict[str, Any]], elapsed: float,
+               history: list[dict[str, Any]]) -> None:
         from Scripts.UI.Excel_Report import generate_excel_report
         from Scripts.UI.HTML_Report import generate_html_report
 
-        counts: dict[str, int] = {}
-        for r in rows:
-            counts[r["result"]] = counts.get(r["result"], 0) + 1
+        counts = _counts(rows)
         hours, rem = divmod(int(elapsed), 3600)
         mins, secs = divmod(rem, 60)
+
+        def rel(path: str) -> str:
+            return os.path.relpath(path, folder).replace(os.sep, "/") if path else ""
+
         data = {
             "Report Name": name,
-            "DUT_IP": dut_ip,
             "Total Tests": len(rows),
             "Passed": counts.get("PASSED", 0),
             "Failed": counts.get("FAILED", 0) + counts.get("ERROR", 0),
             "Skipped": counts.get("SKIPPED", 0) + counts.get("XFAIL", 0) + counts.get("NOT RUN", 0),
             "Total Time": f"{hours:02d}:{mins:02d}:{secs:02d}",
+            "Environment": dict(_environment),
+            "History": history,
             "Test Cases": [{
-                "TC_ID": f"{r['panel']} | {r['title']}",
+                "TC_ID": r["node_id"],
+                "Panel": r["panel"],
+                "Title": r["title"],
+                "Spec": r["spec"],
                 "TC_Result": r["result"],
                 "TC_Execution_Duration": f"{r['duration']:.2f}s",
                 "TC_Remarks": r["remarks"],
+                "Message": r["message"],
+                "Screenshot": rel(r["screenshot"]),
+                "Trace": rel(r["trace"]),
             } for r in rows],
         }
         generate_html_report(data, str(folder / "report.html"))
         generate_excel_report(data, str(folder / "report.xlsx"))
+        summary = {k: v for k, v in data.items() if k not in ("Test Cases", "History")}
         (folder / "summary.json").write_text(
-            json.dumps({k: v for k, v in data.items() if k != "Test Cases"} | {"counts": counts, "tests": rows},
-                       indent=2), encoding="utf-8")
+            json.dumps(summary | {"counts": counts, "tests": rows}, indent=2), encoding="utf-8")
+
+
+def _counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r["result"]] = counts.get(r["result"], 0) + 1
+    return counts
+
+
+def set_environment(values: dict[str, Any]) -> None:
+    """Run / tester details shown at the top of the reports (set by conftest at session start)."""
+    _environment.update({k: v for k, v in values.items() if v not in (None, "")})
 
 
 def register(config) -> None:
@@ -227,4 +286,6 @@ def register(config) -> None:
     if hasattr(config, "workerinput"):
         return
     _run_dir, _multi_panel = None, False  # the GUI runs several sessions in one process
+    if config.option.collectonly:
+        return
     config.pluginmanager.register(RunReporter(config), "c2_run_reporter")

@@ -19,12 +19,14 @@ def tc(page: Page) -> TestConfigPage:
 
 @pytest.mark.test_config
 class TestConfigurationPanel:
+    @pytest.mark.spec("TCM-10", partial=True)
     @pytest.mark.smoke
     def test_TC_01_total_test_count_matches_api(self, tc: TestConfigPage, api_client: C2ApiClient):
         selected, total = tc.selected_count()
         assert total == api_client.count_test_cases(), "UI total differs from GET /api/TestConfiguration/GetTestCaseList"
         assert 0 <= selected <= total
 
+    @pytest.mark.spec("TCM-20", partial=True)
     def test_TC_02_start_execution_disabled_without_selection(self, tc: TestConfigPage):
         selected, _ = tc.selected_count()
         if selected:
@@ -35,6 +37,7 @@ class TestConfigurationPanel:
         assert tc.certification_options() == TC["certifications"]
         assert tc.certification() == api_client.get_certification_filter()
 
+    @pytest.mark.spec("TCM-03", partial=True)
     def test_TC_04_search_field_accepts_and_clears_text(self, tc: TestConfigPage):
         tc.search("PHY")
         tc.clear_search()
@@ -53,13 +56,16 @@ class TestConfigurationPanel:
         finally:
             tc.set_report_input("testEngineer", original)
 
+    @pytest.mark.spec("TCM-11", partial=True)
     def test_TC_07_rerun_count_only_editable_when_rerun_enabled(self, tc: TestConfigPage):
         assert tc.rerun_count_editable() == tc.rerun_enabled()
 
+    @pytest.mark.spec("TCM-01")
     @pytest.mark.requires_tester
-    def test_TC_08_test_tree_renders_test_cases(self, tc: TestConfigPage, api_client: C2ApiClient):
-        api_total = api_client.count_test_cases()
-        rendered = tc.tree_node_count()
-        assert rendered > 0, (
-            f"Test selection tree renders 0 nodes although GET /api/TestConfiguration/GetTestCaseList "
-            f"returns {api_total} test cases (the UI fetches that list successfully)")
+    def test_TC_08_test_tree_lists_api_suites(self, tc: TestConfigPage, api_client: C2ApiClient):
+        """Every suite returned by GetTestCaseList is shown in the tree (UI adds a version suffix)."""
+        ui_suites = tc.tree_suite_titles()
+        api_suites = [suite["title"] for root in api_client.get_test_case_list() for suite in root["children"]]
+        assert ui_suites, "Test selection tree shows no suites"
+        missing = [s for s in api_suites if not any(u.startswith(s) for u in ui_suites)]
+        assert not missing, f"Suites from the API missing in the UI tree: {missing} (UI shows {ui_suites})"

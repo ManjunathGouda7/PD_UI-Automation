@@ -33,6 +33,7 @@ markers = [
     "api: backend REST API tests (no browser)",
     "hardware: changes tester/backend state; skipped unless --allow-hw-actions / ALLOW_HW_ACTIONS=true",
     "requires_tester: needs a connected tester; skipped (or failed with --strict-hardware) otherwise",
+    "spec(*ids, partial=False): links a test to Test_Cases_Specification.txt items (see tools/traceability.py)",
     "shell: application shell (header, navigation)",
     "connection: Connection Setup panel",
     "product_cap: Product Capability panel",

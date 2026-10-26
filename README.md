@@ -11,13 +11,19 @@ against software **1.1.1.4** (`/v1.1.4.html`).
 | `test_00_app_shell` | Title / model / version vs API, left navigation, every panel activates |
 | `test_01_connection` | Tester Status table vs `GET /api/ConnectionSetup`, IP field, licenses, calibration validity; scan / connect *(hardware)* |
 | `test_02_product_cap` | DUT type & cable options, Port 1 selection vs `GetPortConfigurations`, project-name validation; select & persist, Read Device Data *(hardware)* |
-| `test_03_test_config` | Test count vs API (215), certification filter vs API, report inputs vs API, rerun controls, test tree |
+| `test_03_test_config` | Test count vs API (215), certification filter vs API, report inputs vs API, rerun controls, every API suite shown in the test tree |
 | `test_04_results` | Summary counters vs `GetTestResults`, chart toolbar, empty-plot state |
 | `test_05_report` | Toolbar, report location, HTML download prompt |
 | `test_06_configure` | Controller options, channel toggles (client-side, restored), capture buttons; Apply *(hardware)* |
 | `test_07_loopback` | Data fields & units, Start/Stop gating |
 | `test_08_help` | Version vs API, support links, API document served, debug-log download |
 | `test_09_api` | Read-only REST checks + **contract tests** against the live Swagger spec (every endpoint used by `C2ApiClient` exists; responses match their published schemas) |
+| `test_10_e2e_execution` | *(hardware)* runs a compliance test via the API, waits for completion, checks results UI vs API and that a report is produced. Test key in `test_data.json` → `e2e_execution` or env `E2E_TEST_KEY` |
+| `tests/unit` | Framework self-tests (reports, Swagger validator, config, mock, discovery, traceability) — no backend or browser |
+
+Coverage against `Test_Cases_Specification.txt` is tracked with `@pytest.mark.spec("CONN-07")` markers
+(`partial=True` when a test covers only part of an item). `python tools/traceability.py` writes
+`Reports/traceability/traceability.html` / `.csv`: per-section automated / partial / not-automated counts.
 
 ## Safety model
 
@@ -32,6 +38,8 @@ The suite runs against a shared, real tester. By default it is **read-only**:
 * No silent fallback: if the backend is unreachable the run aborts. The offline mock is used only with
   `--mock`, serves the API only (UI tests are skipped), and refuses to start if port 5003 is in use.
 * UI tests must not run in parallel against one tester (`-w` > 1 is for API tests only).
+* Before tests start, the tester link is sampled `HEALTH_SAMPLES` times; an unstable link is logged and shown
+  in the report header (results of tester-dependent tests are then unreliable).
 
 ## Quick start
 
@@ -46,8 +54,21 @@ python run.py --mode api           # REST API only, no browser
 python run.py --mode full --allow-hw-actions --strict-hardware   # include tests that drive the tester
 python run.py --smart              # suites affected by your git changes
 python run.py --mode api --mock    # API suite against the offline mock (GRL software not running)
+python run.py --mode unit          # framework self-tests (seconds, no backend)
 python run.py --gui                # PyQt6 desktop runner
+
+python tools/locator_check.py      # after installing a new GRL build: do all locators still match?
+python tools/traceability.py       # spec coverage report
 ```
+
+### Desktop runner (`python MainGUI.py`)
+
+* Left sidebar: one button per panel (plus *All Panels*); the middle list shows that panel's test cases.
+* **▶ Run Selected** runs the ticked tests of the panel shown, **⏩ Run All** runs everything, **■ Stop** aborts
+  the run (pytest, Playwright and Chrome are terminated; unfinished tests show STOPPED).
+* Status per test updates live; selecting a test shows its result, error text, and failure screenshot/trace.
+* **📂 Open Report** opens the run's report folder. IP, options, ticked tests and window size are remembered.
+* Tests run in a separate pytest process, so the GUI stays responsive and every run starts clean.
 
 Plain pytest works too (config lives in `pyproject.toml`): `pytest -m smoke`, `pytest -m "connection and not hardware"`.
 
@@ -64,6 +85,8 @@ Precedence: environment variable → `Configurations/.env` → `jsons/Inputs.jso
 | `STRICT_HARDWARE` | `false` | Fail instead of skip without a tester |
 | `MOCK_SERVER` | `false` | Offline API mock |
 | `UI_TIMEOUT_MS` / `PAGE_LOAD_TIMEOUT_MS` / `AUTO_CONNECT_TIMEOUT_MS` / `TESTER_WAIT_S` | 10000 / 30000 / 90000 / 30 | Timing |
+| `HEALTH_SAMPLES` | `5` | Tester-link samples before the run (0 disables) |
+| `E2E_TEST_KEY` | from `test_data.json` | Compliance test executed by `test_10` |
 
 Expected UI values (dropdown options, labels, URLs) live in `jsons/test_data.json`.
 
@@ -74,8 +97,11 @@ Scripts/
   Helpers/  config.py, Locators.py (verified ids), api_client.py, swagger_contract.py,
             popups.py (PopupGuard), waits.py, mock_server.py, logger.py, smart_test_selector.py
   Pages/    base_page.py (panel-scoped lookups, dropdowns, self-heal), app_page.py, one page per panel
-  TestCases/ test_00 … test_09
-  UI/       PyQt6 runner, HTML / Excel reports
+  Helpers/reporting.py  per-run report folders, HTML/Excel/JSON reports, history
+  TestCases/ test_00 … test_10
+  UI/       PyQt6 window (app.py), gui_events.py (pytest → GUI event stream), HTML / Excel reports
+tests/unit/  framework self-tests
+tools/       locator_check.py, traceability.py
   conftest.py  backend check, run modes, browser/page fixtures, popup guard, failure artifacts
 ```
 
@@ -107,6 +133,11 @@ Reports/
   Multiple_Panels/<timestamp>/                any other mix of panels (same layout as All_Panels)
 ```
 
+Each `<Panel>/` (and `All_Panels/`, `Multiple_Panels/`) folder also keeps `history.json`, shown as a pass-rate
+trend in the report. Report header: run environment, GRL version, tester status / serial / firmware /
+calibration and the tester-link health check. The HTML results table filters by result, and failed rows
+expand to the error, an inline screenshot and the trace command.
+
 Open a trace with `playwright show-trace <trace.zip>`. The GUI's **📂 Open Report** button opens the last run's folder.
 CI also writes JUnit XML to `Reports/junit.xml`; `--allure` adds Allure results. Logs: `logs/automation.log`.
 
@@ -118,5 +149,5 @@ closed, app reloaded only if unhealthy), so the window is not closed and reopene
 | Test | Issue |
 |---|---|
 | `test_02 … TC_04` (xfail, strict) | Project *Save* stays enabled after the name is cleared or is whitespace only |
-| `test_03 … TC_08` | Test selection tree renders no nodes although the UI receives all 215 test cases |
 | `test_01 … TC_05` | During reconnect the UI briefly shows calibration dates `0001-01-01` / *Calibration Error* and raises a false *Controller calibration has expired* alert |
+| — (API) | `GET /api/App/GetAppState` keeps reporting `connectionState: CONNECTED` while the tester is unreachable |

@@ -11,9 +11,10 @@ import ast
 from dataclasses import dataclass, field
 import html
 from pathlib import Path
+import threading
 from typing import Any
 
-from PyQt6.QtCore import QSettings, Qt, QTimer, QUrl
+from PyQt6.QtCore import QSettings, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QColor, QDesktopServices, QGuiApplication, QPixmap
 from PyQt6.QtWidgets import (
     QButtonGroup,
@@ -130,8 +131,11 @@ def _card() -> tuple[QFrame, QHBoxLayout]:
 
 
 class MainWindow(QMainWindow):
+    status_checked = pyqtSignal(str, str)  # emitted from the status-check thread
+
     def __init__(self, controller=None):
         super().__init__()
+        self.status_checked.connect(self._apply_backend_status)
         self.controller = controller
         self.settings = QSettings("GRL", "PD-UI-Automation")
         self.results: dict[str, list[dict[str, Any]]] = {}   # base node id -> result events
@@ -543,19 +547,32 @@ class MainWindow(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(self.last_report_dir))
 
     def update_backend_status(self):
+        """Checks backend / tester status off the UI thread (the API can stall while the tester reconnects)."""
+        if getattr(self, "_status_check_running", False):
+            return
+        self._status_check_running = True
+        self.backend_status_lbl.setText("Checking...")
+        self.backend_status_lbl.setStyleSheet(PILL_IDLE)
+        threading.Thread(target=self._check_backend_status, daemon=True).start()
+
+    def _check_backend_status(self) -> None:
+        text, style = "C2 backend offline", PILL_BAD
         try:
-            from Scripts.Helpers.api_client import c2_api
-            if not c2_api.is_online():
-                self.backend_status_lbl.setText("C2 backend offline")
-                self.backend_status_lbl.setStyleSheet(PILL_BAD)
-                return
-            ver = c2_api.get_software_version()
-            tester = c2_api.get_connection_info().get("testerStatus") or "unknown"
-            self.backend_status_lbl.setText(f"C2 v{ver} | Tester: {tester}")
-            self.backend_status_lbl.setStyleSheet(PILL_OK if tester == "Connected" else PILL_WARN)
+            from Scripts.Helpers.api_client import C2ApiClient
+            client = C2ApiClient(timeout=5.0)
+            if client.is_online():
+                ver = client.get_software_version()
+                tester = client.get_connection_info().get("testerStatus") or "unknown"
+                text = f"C2 v{ver} | Tester: {tester}"
+                style = PILL_OK if tester == "Connected" else PILL_WARN
         except Exception:
-            self.backend_status_lbl.setText("C2 backend offline")
-            self.backend_status_lbl.setStyleSheet(PILL_BAD)
+            text, style = "C2 backend not responding", PILL_WARN
+        self.status_checked.emit(text, style)
+
+    def _apply_backend_status(self, text: str, style: str) -> None:
+        self._status_check_running = False
+        self.backend_status_lbl.setText(text)
+        self.backend_status_lbl.setStyleSheet(style)
 
     # ------------------------------------------------------------------
     # Persisted settings

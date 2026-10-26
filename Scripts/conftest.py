@@ -9,6 +9,7 @@ Run-mode switches (env var or CLI option):
 from __future__ import annotations
 
 import os
+import platform
 import re
 import time
 
@@ -100,10 +101,64 @@ def c2_backend() -> C2ApiClient:
 
     version = client.get_software_version()
     logger.info(f"C2 backend online at {client.base_url} (software {version}, mock={started_mock})")
+    reporting.set_environment(_run_environment(client, version, started_mock))
     yield client
 
     if started_mock:
         stop_mock_service()
+
+
+def _tester_link_health(client: C2ApiClient, samples: int, interval_s: float = 1.0) -> str:
+    """Samples the tester status a few times; a flapping link makes hardware results unreliable."""
+    connected = 0
+    for i in range(samples):
+        connected += client.is_tester_connected()
+        if i < samples - 1:
+            time.sleep(interval_s)
+    if connected == samples:
+        return f"stable ({connected}/{samples} connected)"
+    if connected == 0:
+        return f"not connected (0/{samples})"
+    logger.warning(f"Tester link is UNSTABLE: connected in {connected}/{samples} samples - "
+                   f"tester-dependent results may be unreliable")
+    return f"UNSTABLE ({connected}/{samples} connected)"
+
+
+def _run_environment(client: C2ApiClient, version: str, mock: bool) -> dict[str, str]:
+    env = {
+        "Started": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "Host PC": platform.node(),
+        "Python / Playwright": f"{platform.python_version()} / {_playwright_version()}",
+        "C2 backend": client.base_url + (" (MOCK)" if mock else ""),
+        "GRL software": version,
+        "Hardware actions": "allowed" if Config.allow_hw_actions() else "blocked (read-only run)",
+    }
+    if mock:
+        return env
+    try:
+        info = client.get_connection_info()
+        env.update({
+            "Tester status": info.get("testerStatus", ""),
+            "Tester IP": info.get("testerIpAddress", ""),
+            "Tester serial": info.get("serialNumber", ""),
+            "Firmware": info.get("firmwareVersion", ""),
+            "Calibration": info.get("boardCalibration", ""),
+            "Calibration due": (info.get("calibration_Sp_Date") or "")[:10],
+        })
+    except Exception as e:
+        logger.warning(f"Could not read tester details: {e}")
+    samples = Config.get_int("HEALTH_SAMPLES", 5)
+    if samples > 0:
+        env["Tester link"] = _tester_link_health(client, samples)
+    return env
+
+
+def _playwright_version() -> str:
+    try:
+        from importlib.metadata import version as pkg_version
+        return pkg_version("playwright")
+    except Exception:
+        return "?"
 
 
 @pytest.fixture(scope="session")
