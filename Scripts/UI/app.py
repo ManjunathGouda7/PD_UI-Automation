@@ -11,6 +11,7 @@ import re
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QFrame,
@@ -91,6 +92,58 @@ QTreeWidget {
     border: 1px solid #232936;
     border-radius: 6px;
     color: #f8fafc;
+}
+QHeaderView::section {
+    background-color: #1e2433;
+    color: #f8fafc;
+    border: none;
+    border-bottom: 1px solid #2d3548;
+    padding: 6px;
+    font-weight: bold;
+}
+QTreeWidget::indicator {
+    width: 13px;
+    height: 13px;
+    border-radius: 3px;
+    border: 1px solid #64748b;
+    background-color: #0d0e14;
+}
+QTreeWidget::indicator:checked {
+    background-color: #ff7800;
+    border-color: #ff7800;
+}
+QTreeWidget::indicator:indeterminate {
+    background-color: #7c3f0a;
+    border-color: #ff7800;
+}
+QFrame#sidebar {
+    background-color: #131622;
+    border: 1px solid #232936;
+    border-radius: 8px;
+}
+QPushButton#navBtn {
+    text-align: left;
+    padding: 9px 12px;
+    background-color: #1e2433;
+    border: 1px solid #2d3548;
+}
+QPushButton#navBtn:checked {
+    background-color: #ff7800;
+    border-color: #ff7800;
+    color: #ffffff;
+}
+QPushButton#runAllBtn {
+    background-color: #1e2433;
+    border: 1px solid #ff7800;
+    color: #ff7800;
+    font-weight: bold;
+    padding: 10px 20px;
+    font-size: 14px;
+}
+QLabel#panelTitle {
+    color: #ff7800;
+    font-size: 15px;
+    font-weight: bold;
 }
 QTextEdit {
     background-color: #0d0e14;
@@ -189,8 +242,15 @@ class MainWindow(QMainWindow):
         sb_layout.addWidget(self.test_count_lbl)
         main_layout.addWidget(search_bar)
 
-        # Tree & Log view
+        # Panel sidebar | test list | log
+        self.suites = discover_tests()
         content_layout = QHBoxLayout()
+        content_layout.addWidget(self._build_sidebar())
+
+        tests_box = QVBoxLayout()
+        self.panel_title_lbl = QLabel("")
+        self.panel_title_lbl.setObjectName("panelTitle")
+        tests_box.addWidget(self.panel_title_lbl)
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Panels & Test Cases", "Status"])
         header = self.tree.header()
@@ -199,7 +259,8 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.tree.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         self.populate_tree()
-        content_layout.addWidget(self.tree, 3)
+        tests_box.addWidget(self.tree)
+        content_layout.addLayout(tests_box, 3)
 
         self.log_view = QTextEdit()
         self.log_view.setReadOnly(True)
@@ -216,19 +277,60 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         bottom_layout.addWidget(self.progress_bar, 4)
 
-        self.run_btn = QPushButton("🚀 Run Automation Tests")
+        self.run_btn = QPushButton("▶ Run Selected")
         self.run_btn.setObjectName("runBtn")
+        self.run_btn.setToolTip("Run the ticked tests of the panel shown on the left")
         self.run_btn.clicked.connect(self.on_run_clicked)
         bottom_layout.addWidget(self.run_btn, 1)
+
+        self.run_all_btn = QPushButton("⏩ Run All")
+        self.run_all_btn.setObjectName("runAllBtn")
+        self.run_all_btn.setToolTip("Run every test of every panel")
+        self.run_all_btn.clicked.connect(self.on_run_all_clicked)
+        bottom_layout.addWidget(self.run_all_btn, 1)
         main_layout.addWidget(bottom_bar)
+
+        self.show_panel(None)
+
+    def _build_sidebar(self) -> QFrame:
+        """One button per test panel (plus 'All Panels'); clicking shows only that panel's scripts."""
+        sidebar = QFrame()
+        sidebar.setObjectName("sidebar")
+        sidebar.setFixedWidth(210)
+        layout = QVBoxLayout(sidebar)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+        self.panel_buttons = QButtonGroup(self)
+        self.panel_buttons.setExclusive(True)
+        entries = [(None, "All Panels", sum(len(s.tests) for s in self.suites))]
+        entries += [(i, s.short_name, len(s.tests)) for i, s in enumerate(self.suites)]
+        for index, name, count in entries:
+            btn = QPushButton(f"{name}  ({count})")
+            btn.setObjectName("navBtn")
+            btn.setCheckable(True)
+            btn.clicked.connect(lambda _=False, i=index: self.show_panel(i))
+            self.panel_buttons.addButton(btn)
+            layout.addWidget(btn)
+            if index is None:
+                btn.setChecked(True)
+        layout.addStretch()
+        return sidebar
+
+    def show_panel(self, index: int | None) -> None:
+        """Shows one panel's tests (None = all panels)."""
+        self.current_panel = index
+        title = "All Panels" if index is None else self.suites[index].title
+        self.panel_title_lbl.setText(title)
+        self.filter_tests(self.search_input.text())
 
     def populate_tree(self):
         """Builds the tree from Scripts/TestCases: readable panel and test names, run status per test."""
         self.tree.clear()
         self._items_by_node: dict[str, QTreeWidgetItem] = {}
         total = 0
-        for suite in discover_tests():
+        for suite_index, suite in enumerate(self.suites):
             suite_item = QTreeWidgetItem([f"{suite.title}  ({len(suite.tests)})", ""])
+            suite_item.setData(0, Qt.ItemDataRole.UserRole, suite_index)
             suite_item.setToolTip(0, suite.file)
             suite_item.setFlags(suite_item.flags() | Qt.ItemFlag.ItemIsAutoTristate | Qt.ItemFlag.ItemIsUserCheckable)
             font = suite_item.font(0)
@@ -279,33 +381,48 @@ class MainWindow(QMainWindow):
             for j in range(suite.childCount()):
                 yield suite.child(j)
 
+    def _shown_test_items(self):
+        """Test rows currently shown (selected panel and search filter)."""
+        for item in self._test_items():
+            if not item.isHidden() and not item.parent().isHidden():
+                yield item
+
     def selected_node_ids(self) -> list[str]:
-        return [item.data(0, Qt.ItemDataRole.UserRole)[0] for item in self._test_items()
+        """Ticked tests of the panel being shown."""
+        return [item.data(0, Qt.ItemDataRole.UserRole)[0] for item in self._shown_test_items()
                 if item.checkState(0) == Qt.CheckState.Checked]
 
+    def all_node_ids(self) -> list[str]:
+        """Every test of every panel, regardless of ticks or filters."""
+        return [test.node_id for suite in self.suites for test in suite.tests]
+
     def select_smoke_preset(self):
-        for item in self._test_items():
+        for item in self._shown_test_items():
             smoke = "smoke" in item.data(0, Qt.ItemDataRole.UserRole)[1]
             item.setCheckState(0, Qt.CheckState.Checked if smoke else Qt.CheckState.Unchecked)
 
     def select_full_preset(self):
-        for item in self._test_items():
+        for item in self._shown_test_items():
             item.setCheckState(0, Qt.CheckState.Checked)
 
     def clear_selection(self):
-        for item in self._test_items():
+        for item in self._shown_test_items():
             item.setCheckState(0, Qt.CheckState.Unchecked)
 
     def filter_tests(self, text):
         text = text.lower()
         visible_count = 0
+        panel = getattr(self, "current_panel", None)
         for i in range(self.tree.topLevelItemCount()):
             parent = self.tree.topLevelItem(i)
+            if panel is not None and parent.data(0, Qt.ItemDataRole.UserRole) != panel:
+                parent.setHidden(True)
+                continue
             parent_match = text in parent.text(0).lower()
             child_matches = False
             for j in range(parent.childCount()):
                 child = parent.child(j)
-                node_id = child.data(0, Qt.ItemDataRole.UserRole)[0].lower()
+                node_id = child.data(0, Qt.ItemDataRole.UserRole)[0].rsplit("::", 1)[-1].lower()
                 match = parent_match or text in child.text(0).lower() or text in node_id
                 child.setHidden(not match)
                 if match:
@@ -316,10 +433,15 @@ class MainWindow(QMainWindow):
 
     def on_run_clicked(self):
         if self.controller:
-            self.controller.start_execution()
-        else:
-            self.log_view.append("[INFO] Starting test execution in local runner...")
-            self.progress_bar.setValue(50)
+            self.controller.start_execution(self.selected_node_ids())
+
+    def on_run_all_clicked(self):
+        if self.controller:
+            self.controller.start_execution(self.all_node_ids())
+
+    def set_running(self, running: bool) -> None:
+        self.run_btn.setEnabled(not running)
+        self.run_all_btn.setEnabled(not running)
 
     def update_backend_status(self):
         try:
@@ -354,6 +476,15 @@ class DiscoveredSuite:
     file: str
     title: str
     tests: list[DiscoveredTest] = field(default_factory=list)
+
+    @property
+    def short_name(self) -> str:
+        """Sidebar label: 'Panel 1: Connection Setup' -> 'Connection Setup', 'REST API: ...' -> 'REST API'."""
+        match = re.match(r"Panel \d+:\s*(.+)", self.title)
+        if match:
+            return match.group(1)
+        head = self.title.split(":", 1)[0].strip()
+        return head[:1].upper() + head[1:]
 
 
 def _marker_names(decorators: list[ast.expr]) -> set[str]:

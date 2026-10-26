@@ -141,8 +141,7 @@ class GUIController:
         self.window = window
         self.runner = None
 
-    def start_execution(self):
-        node_ids = self.window.selected_node_ids()
+    def start_execution(self, node_ids: list[str]):
         if not node_ids:
             self.window.log_view.append("[WARN] No tests selected.")
             return
@@ -163,9 +162,9 @@ class GUIController:
         self.runner.log_signal.connect(self.window.log_view.append)
         self.runner.status_signal.connect(self.window.set_test_status)
         self.runner.progress_signal.connect(self.window.progress_bar.setValue)
-        self.runner.finished_signal.connect(lambda: self.window.run_btn.setEnabled(True))
+        self.runner.finished_signal.connect(lambda: self.window.set_running(False))
 
-        self.window.run_btn.setEnabled(False)
+        self.window.set_running(True)
         self.window.progress_bar.setValue(10)
         self.runner.start()
 

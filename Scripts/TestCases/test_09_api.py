@@ -1,5 +1,5 @@
 """
-REST API suite for GRL USB PD C2 (V-DPWR-EPR) - no browser.
+REST API: read-only backend checks and Swagger contract (no browser).
 Read-only endpoints only; endpoints that drive hardware are covered by `hardware` UI tests.
 """
 import ipaddress
