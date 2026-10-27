@@ -63,5 +63,19 @@ class AppPage(BasePage):
     def nav_panel_names(self) -> list[str]:
         return [" ".join(t.split()) for t in self.page.locator(NavigationLocators.NAV_LABEL).all_inner_texts()]
 
+    def toggle_navigation(self) -> None:
+        """Top-left menu control: collapses / expands the left navigation pane."""
+        self.page.locator(AppLocators.HAMBURGER).click()
+
+    def navigation_visible(self) -> bool:
+        return self.page.locator(NavigationLocators.NAV_GROUP).is_visible()
+
+    def layout_overflow(self) -> dict[str, int]:
+        """Horizontal overflow of the page at the current viewport (0 = no horizontal scrolling needed)."""
+        return self.page.evaluate("""() => ({
+            viewport: window.innerWidth,
+            overflow: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
+        })""")
+
     def active_panel_name(self) -> str:
         return " ".join(self.page.locator(NavigationLocators.ACTIVE_NAV_LABEL).inner_text().split())

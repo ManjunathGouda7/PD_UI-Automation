@@ -64,6 +64,9 @@ class ConnectionPage(BasePage):
                 })
         return result
 
+    def update_firmware_enabled(self) -> bool:
+        return self.is_enabled(ConnectionLocators.UPDATE_FW_BTN)
+
     def license_header_visible(self) -> bool:
         return self.el(ConnectionLocators.LICENSE_HEADER).is_visible()
 

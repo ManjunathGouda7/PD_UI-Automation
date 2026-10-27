@@ -44,7 +44,8 @@ class TestResultsPanel:
     def test_TC_04_chart_navigation_buttons_respond(self, results: ResultsPage, button: str, popup_guard):
         results.click_toolbar(button)
         assert results.is_active()
-        assert not [p for p in popup_guard.seen if "error" in p.message.lower()], popup_guard.seen
+        errors = popup_guard.errors_in_test()
+        assert not errors, f"Error popup after clicking {button}: {errors}"
 
     @pytest.mark.spec("RES-15", partial=True)
     def test_TC_05_plot_area_offers_file_load_when_empty(self, results: ResultsPage, api_client: C2ApiClient):

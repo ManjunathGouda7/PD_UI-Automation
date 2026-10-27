@@ -4,6 +4,7 @@ Page Object Model for the Test Config panel.
 from __future__ import annotations
 
 import re
+import time
 
 from playwright.sync_api import Page, expect
 
@@ -56,6 +57,52 @@ class TestConfigPage(BasePage):
             return []
         return [" ".join(suites.nth(i).locator(TestConfigLocators.TREE_NODE_LABEL).first.inner_text().split())
                 for i in range(suites.count())]
+
+    def tree_node_count(self) -> int:
+        return self.panel.locator(TestConfigLocators.TREE_NODE).count()
+
+    def visible_tree_titles(self) -> list[str]:
+        return [" ".join(t.split()) for t in
+                self.panel.locator(f"{TestConfigLocators.TREE_NODE} {TestConfigLocators.TREE_NODE_LABEL}").all_inner_texts()]
+
+    def wait_for_tree_count(self, predicate, timeout_ms: int | None = None) -> int:
+        """Polls the rendered node count until predicate(count) holds; returns the last count."""
+        deadline = time.monotonic() + (timeout_ms or self.timeout) / 1000
+        while True:
+            count = self.tree_node_count()
+            if predicate(count) or time.monotonic() > deadline:
+                return count
+            self.page.wait_for_timeout(200)
+
+    def _suite_checkbox(self, suite_prefix: str):
+        suite = self.panel.locator(TestConfigLocators.TREE_SUITE_NODE).filter(
+            has=self.page.locator(TestConfigLocators.TREE_NODE_LABEL, has_text=suite_prefix)).first
+        return suite.locator(TestConfigLocators.TREE_CHECKBOX).first
+
+    def set_suite_selected(self, suite_prefix: str, selected: bool) -> None:
+        """Ticks / unticks a top-level suite (client-side until execution starts)."""
+        box = self._suite_checkbox(suite_prefix)
+        if self.suite_selected(suite_prefix) != selected:
+            self.ensure_active()
+            box.click()
+        checked = re.compile(re.escape(TestConfigLocators.TREE_CHECKBOX_CHECKED))
+        if selected:
+            expect(box).to_have_class(checked, timeout=self.timeout)
+        else:
+            expect(box).not_to_have_class(checked, timeout=self.timeout)
+
+    def suite_selected(self, suite_prefix: str) -> bool:
+        classes = self._suite_checkbox(suite_prefix).get_attribute("class") or ""
+        return TestConfigLocators.TREE_CHECKBOX_CHECKED in classes.split()
+
+    def filter_classes(self) -> dict[str, str]:
+        return {name: self.el(sel).get_attribute("class") or "" for name, sel in TestConfigLocators.FILTER_BUTTONS.items()}
+
+    def click_filter(self, name: str) -> None:
+        self.click(TestConfigLocators.FILTER_BUTTONS[name])
+
+    def clear_filters(self) -> None:
+        self.click(TestConfigLocators.FILTER_CLEAR_BTN)
 
     def set_expand_test_list(self, expanded: bool) -> None:
         self.set_checked(TestConfigLocators.EXPAND_TEST_LIST, expanded)

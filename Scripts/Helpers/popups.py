@@ -18,6 +18,9 @@ from playwright.sync_api import Locator, Page
 from Scripts.Helpers.Locators import AppLocators
 from Scripts.Helpers.logger import logger
 
+# Alerts the app raises on its own about the tester link / calibration, independent of the UI action.
+_CONNECTIVITY_MARKERS = ("ethernet communication", "unreachable", "calibration", "reconnect", "disconnected")
+
 
 @dataclass
 class PopupRecord:
@@ -26,12 +29,31 @@ class PopupRecord:
     buttons: list[str]
     auto_dismissed: bool
 
+    @property
+    def is_connectivity_alert(self) -> bool:
+        text = f"{self.title} {self.message}".lower()
+        return any(marker in text for marker in _CONNECTIVITY_MARKERS)
+
 
 @dataclass
 class PopupGuard:
     page: Page
     seen: list[PopupRecord] = field(default_factory=list)
     _installed: bool = False
+    _test_start: int = 0
+
+    def start_test(self) -> None:
+        """Marks the start of a test; seen_in_test then returns only popups raised since."""
+        self._test_start = len(self.seen)
+
+    @property
+    def seen_in_test(self) -> list[PopupRecord]:
+        return self.seen[self._test_start:]
+
+    def errors_in_test(self) -> list[PopupRecord]:
+        """Error popups raised during the current test, excluding tester connectivity alerts."""
+        return [p for p in self.seen_in_test
+                if "error" in f"{p.title} {p.message}".lower() and not p.is_connectivity_alert]
 
     def install(self) -> PopupGuard:
         if not self._installed:

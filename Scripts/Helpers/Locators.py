@@ -94,6 +94,15 @@ class TestConfigLocators:
     TREE_SUITE_NODE = ".test-selection-treeview-container ul.rc-tree > li"
     TREE_NODE = ".test-selection-treeview-container ul.rc-tree li"
     TREE_NODE_LABEL = ".rc-tree-title"
+    TREE_CHECKBOX = ".rc-tree-checkbox"
+    TREE_CHECKBOX_CHECKED = "rc-tree-checkbox-checked"  # class added when ticked
+
+    FILTER_BUTTONS = {
+        "Pass": FILTER_PASS_BTN,
+        "Fail": FILTER_FAIL_BTN,
+        "Incomplete": FILTER_INCOMPLETE_BTN,
+        "Warning": FILTER_WARNING_BTN,
+    }
 
     # Report Generation inputs (DUT / Test information)
     MANUFACTURER_INPUT = "#tcReportManufacturerInputField"

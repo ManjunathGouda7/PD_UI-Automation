@@ -8,7 +8,9 @@ import pytest
 from Scripts.Data.test_data_manager import test_data_manager
 from Scripts.Helpers.api_client import C2ApiClient
 from Scripts.Helpers.Locators import ConfigureLocators
+from Scripts.Helpers.waits import wait_until
 from Scripts.Pages.configure_page import ConfigurePage
+from Scripts.Pages.connection_page import ConnectionPage
 
 CFG = test_data_manager.section("configure")
 
@@ -47,11 +49,17 @@ class TestConfigurePanel:
         assert ratio.isdigit() and int(ratio) > 0, ratio
 
     @pytest.mark.spec("CFG-06", partial=True)
-    def test_TC_05_stop_capture_disabled_when_not_capturing(self, cfg: ConfigurePage, api_client: C2ApiClient):
+    def test_TC_05_capture_buttons_follow_capture_and_tester_state(self, cfg: ConfigurePage, api_client: C2ApiClient):
         if api_client.get_capture_status():
             pytest.skip("A capture is running")
         assert not cfg.button_enabled(ConfigureLocators.STOP_CAPTURE_BTN)
-        assert cfg.button_enabled(ConfigureLocators.START_CAPTURE_BTN)
+
+        def snapshot():
+            status = ConnectionPage(cfg.page).tester_info()["Tester Status"]  # panel is mounted; no navigation
+            return status, cfg.button_enabled(ConfigureLocators.START_CAPTURE_BTN)
+
+        status, start_enabled = wait_until(snapshot, lambda a: a == snapshot(), timeout_s=10, interval_s=0.5)
+        assert start_enabled is (status == "Connected"),             f"Start Capture enabled={start_enabled} while Tester Status is '{status}' (expected enabled only when connected)"
 
     @pytest.mark.spec("CFG-03", partial=True)
     @pytest.mark.hardware

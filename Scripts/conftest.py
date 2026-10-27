@@ -19,7 +19,7 @@ import pytest
 from Scripts.Helpers import reporting, run_lock
 from Scripts.Helpers.api_client import C2ApiClient
 from Scripts.Helpers.config import Config
-from Scripts.Helpers.Locators import AppLocators
+from Scripts.Helpers.Locators import AppLocators, ConnectionLocators
 from Scripts.Helpers.logger import logger
 from Scripts.Helpers.mock_server import start_mock_service, stop_mock_service
 from Scripts.Helpers.popups import PopupGuard
@@ -101,7 +101,7 @@ def pytest_runtest_makereport(item, call):
 # ----------------------------------------------------------------------------
 
 @pytest.fixture(scope="session", autouse=True)
-def c2_backend() -> C2ApiClient:
+def c2_backend(request) -> C2ApiClient:
     """
     Verifies the C2 backend is reachable before any test runs. There is no silent
     fallback: against the real app an offline backend aborts the run; the mock is used
@@ -122,7 +122,9 @@ def c2_backend() -> C2ApiClient:
 
     version = client.get_software_version()
     logger.info(f"C2 backend online at {client.base_url} (software {version}, mock={started_mock})")
-    reporting.set_environment(_run_environment(client, version, started_mock))
+    uses_tester = any(i.get_closest_marker(m) for i in request.session.items
+                      for m in ("ui", "hardware", "requires_tester"))
+    reporting.set_environment(_run_environment(client, version, started_mock, check_tester=uses_tester))
     yield client
 
     if started_mock:
@@ -145,7 +147,7 @@ def _tester_link_health(client: C2ApiClient, samples: int, interval_s: float = 1
     return f"UNSTABLE ({connected}/{samples} connected)"
 
 
-def _run_environment(client: C2ApiClient, version: str, mock: bool) -> dict[str, str]:
+def _run_environment(client: C2ApiClient, version: str, mock: bool, check_tester: bool = True) -> dict[str, str]:
     env = {
         "Started": time.strftime("%Y-%m-%d %H:%M:%S"),
         "Host PC": platform.node(),
@@ -158,8 +160,11 @@ def _run_environment(client: C2ApiClient, version: str, mock: bool) -> dict[str,
     }
     if mock:
         return env
+    # GET /api/ConnectionSetup queries the tester live (~5 s on a slow link, longer while it reconnects):
+    # bounded timeout, no retries, so the check can't stall the run.
+    fast = C2ApiClient(base_url=client.base_url, timeout=8.0, retries=0)
     try:
-        info = client.get_connection_info()
+        info = fast.get_connection_info()
         env.update({
             "Tester status": info.get("testerStatus", ""),
             "Tester IP": info.get("testerIpAddress", ""),
@@ -170,9 +175,9 @@ def _run_environment(client: C2ApiClient, version: str, mock: bool) -> dict[str,
         })
     except Exception as e:
         logger.warning(f"Could not read tester details: {e}")
-    samples = Config.get_int("HEALTH_SAMPLES", 5)
-    if samples > 0:
-        env["Tester link"] = _tester_link_health(client, samples)
+    samples = Config.get_int("HEALTH_SAMPLES", 3)
+    if samples > 0 and check_tester:
+        env["Tester link"] = _tester_link_health(fast, samples)
     return env
 
 
@@ -205,6 +210,10 @@ def api_client(c2_backend: C2ApiClient) -> C2ApiClient:
     return c2_backend
 
 
+_OFFLINE_GRACE_S = 120.0
+_tester_offline_since = 0.0
+
+
 def _wait_for_tester(api_client: C2ApiClient, timeout_s: float) -> bool:
     deadline = time.monotonic() + timeout_s
     while True:
@@ -221,11 +230,21 @@ def _requires_tester(request, api_client: C2ApiClient):
     Tests marked `requires_tester` wait up to TESTER_WAIT_S (default 30 s) for a connected
     tester - the link can drop briefly - then skip, or fail with STRICT_HARDWARE.
     """
+    global _tester_offline_since
     if not request.node.get_closest_marker("requires_tester"):
         return
     wait_s = Config.get_int("TESTER_WAIT_S", 30)
-    if not _wait_for_tester(api_client, wait_s):
-        msg = f"No tester connected within {wait_s}s (GET /api/ConnectionSetup testerStatus != Connected)"
+    # After a failed wait, don't make every following test wait again: re-check once without waiting.
+    recently_offline = _tester_offline_since and time.monotonic() - _tester_offline_since < _OFFLINE_GRACE_S
+    connected = api_client.is_tester_connected() if recently_offline else _wait_for_tester(api_client, wait_s)
+    if connected:
+        _tester_offline_since = 0.0
+    elif not recently_offline:
+        _tester_offline_since = time.monotonic()  # a full wait just failed: start a new grace period
+    if not connected:
+        waited = (f"offline for {time.monotonic() - _tester_offline_since:.0f}s, not waiting again"
+                  if recently_offline else f"waited {wait_s}s")
+        msg = f"No tester connected ({waited}; GET /api/ConnectionSetup testerStatus != Connected)"
         if Config.strict_hardware():
             pytest.fail(msg)
         pytest.skip(msg)
@@ -288,6 +307,17 @@ class BrowserSession:
             self.guard.dismiss_informational()
         return pg
 
+    def sync_tester_state(self) -> None:
+        """
+        The page is shared, so it may still show a tester state from before a reconnect. Tests that
+        need the tester (the backend already reports it connected) get a reloaded app if the UI lags.
+        """
+        status = self.page.locator(ConnectionLocators.TESTER_INFO_ROWS).first.locator("td")
+        if status.count() and status.inner_text().strip() != "Connected":
+            logger.info(f"UI shows tester '{status.inner_text().strip()}' but backend is connected; reloading app")
+            AppPage(self.page).load()
+            self.guard.dismiss_informational()
+
     def close(self) -> None:
         try:
             self.context.tracing.stop()
@@ -326,7 +356,10 @@ def popup_guard(page: Page) -> PopupGuard:
 @pytest.fixture
 def page(browser_session: BrowserSession, request) -> Page:
     pg = browser_session.reset_for_test()
+    if request.node.get_closest_marker("requires_tester"):
+        browser_session.sync_tester_state()
     guard = browser_session.guard
+    guard.start_test()
     popups_before = len(guard.seen)
     errors_before = len(browser_session.console_errors)
     browser_session.context.tracing.start_chunk(title=request.node.nodeid)

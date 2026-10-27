@@ -2,11 +2,12 @@
 Application shell: load, header, left navigation.
 Spec: Connection Setup #1, #2; General #9.
 """
-from playwright.sync_api import Page
+from playwright.sync_api import Page, expect
 import pytest
 
 from Scripts.Data.test_data_manager import test_data_manager
 from Scripts.Helpers.api_client import C2ApiClient
+from Scripts.Helpers.Locators import AppLocators, NavigationLocators
 from Scripts.Pages.app_page import AppPage
 from Scripts.Pages.configure_page import ConfigurePage
 from Scripts.Pages.connection_page import ConnectionPage
@@ -54,3 +55,32 @@ class TestAppShell:
         others = [p for p in PANEL_PAGES if p is not page_cls]
         assert not any(o(app.page).is_active() for o in others), "More than one panel marked active"
         assert app.header_version() == api_client.get_software_version()
+
+    @pytest.mark.spec("CONN-03")
+    def test_TC_06_menu_control_collapses_and_expands_navigation(self, app: AppPage):
+        assert app.navigation_visible()
+        app.toggle_navigation()
+        try:
+            expect(app.page.locator(NavigationLocators.NAV_GROUP)).to_be_hidden()
+        finally:
+            if not app.navigation_visible():
+                app.toggle_navigation()
+        expect(app.page.locator(NavigationLocators.NAV_GROUP)).to_be_visible()
+        assert app.nav_panel_names() == APP["panels"]
+
+    @pytest.mark.spec("PCB-07", partial=True)
+    @pytest.mark.parametrize("width, height", [(1920, 1080), (1366, 768)], ids=["1920x1080", "1366x768"])
+    def test_TC_07_layout_fits_common_resolutions(self, app: AppPage, width: int, height: int):
+        """No horizontal scrolling and all navigation entries reachable at common resolutions."""
+        original = app.page.viewport_size
+        app.page.set_viewport_size({"width": width, "height": height})
+        try:
+            app.page.wait_for_timeout(300)  # let the layout reflow
+            metrics = app.layout_overflow()
+            assert metrics["overflow"] == 0, f"Horizontal overflow of {metrics['overflow']}px at {width}x{height}"
+            assert app.nav_panel_names() == APP["panels"]
+            expect(app.page.locator(AppLocators.PRIMARY_TITLE)).to_be_visible()
+            for page_cls in PANEL_PAGES:
+                assert page_cls(app.page).open().is_active()
+        finally:
+            app.page.set_viewport_size(original)

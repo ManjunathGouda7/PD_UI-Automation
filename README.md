@@ -92,7 +92,7 @@ Precedence: environment variable → `Configurations/.env` → `jsons/Inputs.jso
 | `STRICT_HARDWARE` | `false` | Fail instead of skip without a tester |
 | `MOCK_SERVER` | `false` | Offline API mock |
 | `UI_TIMEOUT_MS` / `PAGE_LOAD_TIMEOUT_MS` / `AUTO_CONNECT_TIMEOUT_MS` / `TESTER_WAIT_S` | 10000 / 30000 / 90000 / 30 | Timing |
-| `HEALTH_SAMPLES` | `5` | Tester-link samples before the run (0 disables) |
+| `HEALTH_SAMPLES` | `3` | Tester-link samples before the run (0 disables) |
 | `E2E_TEST_KEY` | from `test_data.json` | Compliance test executed by `test_10` |
 
 Expected UI values (dropdown options, labels, URLs) live in `jsons/test_data.json`.
@@ -159,3 +159,6 @@ closed, app reloaded only if unhealthy), so the window is not closed and reopene
 | `test_02 … TC_04` (xfail, strict) | Project *Save* stays enabled after the name is cleared or is whitespace only |
 | `test_01 … TC_05` | During reconnect the UI briefly shows calibration dates `0001-01-01` / *Calibration Error* and raises a false *Controller calibration has expired* alert |
 | — (API) | `GET /api/App/GetAppState` keeps reporting `connectionState: CONNECTED` while the tester is unreachable |
+| `test_01 … TC_03` (xfail when seen) | After a failed auto-connect the UI keeps showing *IP address … unreachable* although the backend has reconnected to the same tester; the Tester Status only updates after a page reload |
+| — (API) | `GET /api/Results/GetTestResultOffline` never answers (blocks > 40 s); excluded from the read-only contract checks |
+| — (API) | `GET /api/ConnectionSetup` queries the tester live: ~5 s per call on a slow link, longer while it reconnects |

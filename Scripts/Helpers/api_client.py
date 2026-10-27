@@ -18,6 +18,8 @@ from Scripts.Helpers.logger import logger
 # Several GETs on this backend have side effects (GetDeleteAllTestData, GetUpdateSystemFirmware,
 # StopTestExecution, ForceStopCurrentExecution, SetQCVoltage*, */ClearDataObjects, DiscoverIPAddress,
 # GetEloadsOnScan, GetTryCableFlip, GetConfigControllerStopCapture, ...) - never add those here.
+# GetTestResultOffline is excluded too: it blocks (no response within 40 s on 1.1.1.4), apparently
+# waiting for an offline result file to be loaded.
 READ_ONLY_GET_ENDPOINTS: tuple[str, ...] = (
     "api/App/GetAppState", "api/App/GetSoftwareVersion", "api/App/GetURLVersionExtension",
     "api/App/GetAppStatusMode", "api/App/GetPdModeStatus", "api/App/GetDisablePopUpStatus",
@@ -34,7 +36,6 @@ READ_ONLY_GET_ENDPOINTS: tuple[str, ...] = (
     "api/ReportsGeneration/GetReportFileName", "api/ReportsGeneration/GetResultsFolderName",
     "api/ReportsGeneration/GetReportInputs", "api/ReportsGeneration/GetTestRunInfo",
     "api/Results/GetTestResults", "api/Results/GetCapsResults", "api/Results/GetConfigureControllerResults",
-    "api/Results/GetTestResultOffline",
     "api/TestConfiguration/GetCurrentSelectedPortStatus", "api/TestConfiguration/GetTestCaseList",
     "api/TestConfiguration/GetQcLegacyTestCaseList", "api/TestConfiguration/GetEloadConnected",
     "api/TestConfiguration/GetCertificationFilter", "api/TestConfiguration/GetCableName",
@@ -61,13 +62,13 @@ class C2ApiClient:
     Client for the GRL-V-DPWR-EPR REST API backend.
     """
 
-    def __init__(self, base_url: str | None = None, timeout: float = 10.0):
+    def __init__(self, base_url: str | None = None, timeout: float = 10.0, retries: int = 2):
         self.base_url = (base_url or Config.api_host()).rstrip("/")
         self.timeout = timeout
         self.session = requests.Session()
         # Retry transient connection errors / 5xx on idempotent reads only; commands are never replayed.
         retry = Retry(
-            total=2, connect=2, read=1, backoff_factor=0.5,
+            total=retries, connect=retries, read=min(retries, 1), backoff_factor=0.5,
             status_forcelist=(502, 503, 504), allowed_methods=frozenset({"GET"}),
             raise_on_status=False,
         )

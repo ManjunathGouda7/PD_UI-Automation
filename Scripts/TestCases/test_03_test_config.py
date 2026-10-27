@@ -69,3 +69,74 @@ class TestConfigurationPanel:
         assert ui_suites, "Test selection tree shows no suites"
         missing = [s for s in api_suites if not any(u.startswith(s) for u in ui_suites)]
         assert not missing, f"Suites from the API missing in the UI tree: {missing} (UI shows {ui_suites})"
+
+
+@pytest.mark.test_config
+@pytest.mark.requires_tester
+class TestConfigurationTree:
+    """Test selection tree interactions. All client-side; every test restores the tree."""
+
+    SUITE = "Power Delivery 3.2 Tests"
+
+    @pytest.mark.spec("TCM-08")
+    def test_TC_09_expand_test_list_expands_and_collapses_all_nodes(self, tc: TestConfigPage):
+        collapsed = tc.wait_for_tree_count(lambda n: n > 0)
+        try:
+            tc.set_expand_test_list(True)
+            expanded = tc.wait_for_tree_count(lambda n: n > collapsed)
+            assert expanded > collapsed, f"Expand Test List did not expand the tree ({collapsed} nodes)"
+        finally:
+            tc.set_expand_test_list(False)
+        assert tc.wait_for_tree_count(lambda n: n == collapsed) == collapsed
+
+    @pytest.mark.spec("TCM-09", "TCM-10")
+    def test_TC_10_selecting_a_suite_updates_selected_counter(self, tc: TestConfigPage, api_client: C2ApiClient):
+        before, total = tc.selected_count()
+        suite_size = next(_leaf_count(s) for root in api_client.get_test_case_list()
+                          for s in root["children"] if s["title"] == self.SUITE)
+        try:
+            tc.set_suite_selected(self.SUITE, True)
+            assert tc.selected_count() == (before + suite_size, total)
+        finally:
+            tc.set_suite_selected(self.SUITE, False)
+        assert tc.selected_count() == (before, total)
+
+    @pytest.mark.spec("TCM-20", partial=True)
+    def test_TC_11_start_execution_enabled_once_tests_selected(self, tc: TestConfigPage):
+        if tc.selected_count()[0]:
+            pytest.skip("Tests already selected")
+        try:
+            tc.set_suite_selected(self.SUITE, True)
+            assert tc.start_execution_enabled(), "Start Execution stays disabled with tests selected"
+        finally:
+            tc.set_suite_selected(self.SUITE, False)
+        assert not tc.start_execution_enabled()
+
+    @pytest.mark.spec("TCM-03")
+    @pytest.mark.parametrize("query", ["Eye Diagram", "TEST.PD.PHY.ALL.2"], ids=["by-name", "by-id"])
+    def test_TC_12_search_filters_tree_by_name_and_id(self, tc: TestConfigPage, query: str):
+        try:
+            tc.search(query)
+            tc.wait_for_tree_count(lambda n: n < 10)
+            titles = tc.visible_tree_titles()
+            assert titles and query.lower() in titles[-1].lower(), f"Search {query!r} shows {titles}"
+            assert len(titles) < 10, f"Search {query!r} did not narrow the tree: {len(titles)} nodes"
+        finally:
+            tc.clear_search()
+        assert len(tc.tree_suite_titles()) >= 4
+
+    @pytest.mark.spec("TCM-07", partial=True)
+    def test_TC_13_result_filters_toggle_and_clear(self, tc: TestConfigPage):
+        baseline = tc.filter_classes()
+        try:
+            for name in baseline:
+                tc.click_filter(name)
+                assert tc.filter_classes()[name] != baseline[name], f"{name} filter shows no active state"
+        finally:
+            tc.clear_filters()
+        assert tc.filter_classes() == baseline
+
+
+def _leaf_count(node) -> int:
+    children = node.get("children") or []
+    return 1 if not children else sum(_leaf_count(c) for c in children)
